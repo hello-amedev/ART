@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ART - Evolving Light Wallpaper</title>
+<style>
+  :root {
+    /* タスクバーに隠れないよう持ち上げる量。Lively 起動時は
+       LivelyProperties.json の bottomMargin が livelyPropertyListener 経由で入る */
+    --bottom-offset: 0px;
+  }
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #04040a;
+  }
+  canvas {
+    display: block;
+    position: fixed;
+    inset: 0;
+  }
+  #debug {
+    position: fixed;
+    left: 12px;
+    bottom: calc(10px + var(--bottom-offset));
+    color: rgba(255, 255, 255, 0.6);
+    font: 12px/1.6 Consolas, monospace;
+    pointer-events: none;
+    white-space: pre;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+    background: rgba(0, 0, 0, 0.45);
+    padding: 6px 9px;
+    border-radius: 4px;
+  }
+  /* 右下の常設システム表示(観測パネル) */
+  #hud {
+    position: fixed;
+    right: 16px;
+    bottom: calc(14px + var(--bottom-offset));
+    text-align: right;
+    color: rgba(255, 255, 255, 0.38);
+    font: 11px/1.7 Consolas, 'Courier New', monospace;
+    letter-spacing: 0.14em;
+    pointer-events: none;
+    user-select: none;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+  }
+  #hud .rows {
+    margin-top: 5px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  #hud .row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    justify-content: flex-end;
+  }
+  #hud .chip {
+    width: 12px;
+    height: 3px;
+    border-radius: 1.5px;
+    transition: background-color 0.8s linear;
+  }
+  #hud .id {
+    min-width: 88px;
+    text-align: right;
+    white-space: nowrap;
+  }
+  #hud .bar {
+    width: 46px;
+    height: 3px;
+    background: rgba(255, 255, 255, 0.09);
+    border-radius: 1.5px;
+    overflow: hidden;
+  }
+  #hud .fill {
+    display: block;
+    height: 100%;
+    width: 0;
+    transition: width 0.9s ease, background-color 0.8s linear;
+  }
+  #hud .peak {
+    min-width: 40px;
+    text-align: right;
+  }
+  #hud .state {
+    min-width: 26px;
+    text-align: left;
+    color: rgba(255, 255, 255, 0.55);
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="debug" hidden></div>
+<div id="hud" hidden>
+  <div class="meta"></div>
+  <div class="rows"></div>
+</div>
+<script src="js/noise.js"></script>
+<script src="js/genome.js"></script>
+<script src="js/field.js"></script>
+<script src="js/species.js"></script>
+<script src="js/evolution.js"></script>
+<script src="js/lively.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

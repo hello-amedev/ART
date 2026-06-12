@@ -1,0 +1,62 @@
+{
+  "particleCount": {
+    "type": "slider",
+    "text": "粒子の量",
+    "value": 1200,
+    "min": 300,
+    "max": 3000,
+    "step": 100
+  },
+  "evolutionMinutes": {
+    "type": "slider",
+    "text": "世代交代の間隔(分)",
+    "value": 3,
+    "min": 1,
+    "max": 15,
+    "step": 1
+  },
+  "brightness": {
+    "type": "slider",
+    "text": "明るさ(%)",
+    "value": 100,
+    "min": 40,
+    "max": 160,
+    "step": 5
+  },
+  "trailLength": {
+    "type": "slider",
+    "text": "軌跡の長さ(%)",
+    "value": 50,
+    "min": 10,
+    "max": 95,
+    "step": 5
+  },
+  "ecoMode": {
+    "type": "checkbox",
+    "text": "省電力モード(30fps)",
+    "value": false
+  },
+  "showHud": {
+    "type": "checkbox",
+    "text": "システム表示(世代・種族)",
+    "value": true
+  },
+  "bottomMargin": {
+    "type": "slider",
+    "text": "下端の余白(タスクバーの高さに合わせる)",
+    "value": 60,
+    "min": 0,
+    "max": 240,
+    "step": 4
+  },
+  "diagMode": {
+    "type": "checkbox",
+    "text": "診断表示(不具合調査用)",
+    "value": false
+  },
+  "resetEvolution": {
+    "type": "button",
+    "text": "進化をリセット(第 1 世代から)",
+    "value": "reset"
+  }
+}

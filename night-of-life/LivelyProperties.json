@@ -33,7 +33,7 @@
   },
   "ecoMode": {
     "type": "checkbox",
-    "text": "省電力モード(30fps)",
+    "text": "省電力モード",
     "value": false
   },
   "showHud": {
@@ -43,7 +43,7 @@
   },
   "bottomMargin": {
     "type": "slider",
-    "text": "下端の余白(タスクバーの高さに合わせる)",
+    "text": "下端の余白(計器がタスクバーに隠れる時に調整)",
     "value": 60,
     "min": 0,
     "max": 240,
@@ -51,12 +51,12 @@
   },
   "forceNova": {
     "type": "button",
-    "text": "突然変異を 1 回起こす(演出の確認用)",
+    "text": "突然変異を起こす",
     "value": "force"
   },
   "resetEvolution": {
     "type": "button",
-    "text": "進化をリセット(第 1 世代から)",
+    "text": "進化をリセット",
     "value": "reset"
   }
 }

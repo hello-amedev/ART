@@ -20,6 +20,7 @@
   const hudEl = document.getElementById('hud');
   const hudMetaEl = hudEl.querySelector('.meta');
   const hudRowsEl = hudEl.querySelector('.rows');
+  const hudLogEl = hudEl.querySelector('.log');
 
   const field = new FlowField();
   const grid = new SpatialGrid(48);
@@ -74,6 +75,33 @@
   // 昼夜の明暗(明け方 4 時が最も暗く、昼 16 時が最も明るい)
   function daylightFactor(hour) {
     return 0.5 - 0.5 * Math.cos(((hour - 4) / 24) * TAU);
+  }
+
+  // 活動ピーク時刻(0..24) → 時間帯の言葉。数値より「いつ栄える種族か」が伝わる。
+  // 色の物語(深夜の藍→曙の紫紅→朝の金→昼の空色→夕の茜→宵の紫→夜の藍)に対応
+  function dayPhaseWord(hour) {
+    const h = ((hour % 24) + 24) % 24;
+    if (h < 4) return '夜';
+    if (h < 6.5) return '曙';
+    if (h < 10) return '朝';
+    if (h < 15) return '昼';
+    if (h < 18) return '夕';
+    if (h < 21) return '宵';
+    return '夜';
+  }
+
+  // 生きてきた時間(齢)をストップウォッチ式 m:ss で。単位漢字を使わず一貫表記。
+  // 無常さ — 誰が古株で誰が新参かが、増え続ける一つの数で分かる
+  function ageText(sec) {
+    const m = (sec / 60) | 0;
+    const s = (sec % 60) | 0;
+    return `${m}:${String(s).padStart(2, '0')}`;
+  }
+
+  // 0..1 系の値を「先頭の 0 を省いた素の数値」に(.67 / 1.23)。
+  // デバッグ表示と同じ「機械的な数値の羅列」の質感にするための整形
+  function dec2(v) {
+    return v.toFixed(2).replace(/^0\./, '.');
   }
 
   // h: 0..360, s/l: 0..1 → [r, g, b](0..255 整数)
@@ -170,10 +198,14 @@
     for (const sp of evolution.species) {
       if (sp.opacity <= 0.005) continue;
       const g = sp.genome;
-      const alphaBase = 0.15 * sp.opacity * (0.35 + 0.65 * sp.activity) * bright;
+      // 新星の輝き(大変異の誕生演出): ひときわ明るく・冴えた色で・太い筆致で生まれ、
+      // 一発の閃光として立ち上がってから長い余韻を引いて通常へ収束する。
+      // novaGlow は species 側で算出済み(swell→fade。周期的な明滅ではない)
+      const nv = sp.novaGlow || 0;
+      const alphaBase = 0.15 * sp.opacity * (0.35 + 0.65 * sp.activity) * bright * (1 + 1.5 * nv);
       const coreAlpha = alphaBase.toFixed(3);
       const sat = Math.min(96, g.satBase * 100 * satMod) | 0;
-      const lum = Math.min(76, g.lumBase * 100 + 6) | 0;
+      const lum = (Math.min(78, g.lumBase * 100 + 6 + nv * 16)) | 0;
 
       // 粒子は進行方向を向いた「前後対称の短い光の針」として描く。
       // 頭も尾もないシルエット = 無機的な筆致。彗星型は生物っぽく見える
@@ -183,7 +215,8 @@
         const ca = Math.cos(p.a) * half;
         const sa = Math.sin(p.a) * half;
         ctx.strokeStyle = `hsla(${hue},${sat}%,${lum}%,${coreAlpha})`;
-        ctx.lineWidth = g.glowSize * p.sizeJ * 0.55; // 細く。「点」でなく「線」に見える太さ
+        // 細く。「点」でなく「線」に見える太さ(新星の輝き中は太く力強い筆致に)
+        ctx.lineWidth = g.glowSize * p.sizeJ * 0.55 * (1 + 0.7 * nv);
         ctx.beginPath();
         ctx.moveTo(p.x - ca, p.y - sa);
         ctx.lineTo(p.x + ca, p.y + sa);
@@ -250,7 +283,7 @@
     const hh = String(h | 0).padStart(2, '0');
     const mm = String(((h % 1) * 60) | 0).padStart(2, '0');
     hudMetaEl.textContent =
-      `GEN ${evolution.generation} · ${hh}:${mm}${Flags.demo ? ' · DEMO' : ''}`;
+      `A NIGHT OF LIFE   gen ${evolution.generation} · ${dayPhaseWord(h)} ${hh}:${mm}${Flags.demo ? ' · demo' : ''}`;
 
     const sps = evolution.species;
     const hue0 = baseHue(h);
@@ -269,28 +302,51 @@
           row = document.createElement('div');
           row.className = 'row';
           row.dataset.sid = sid;
+          // 色チップ(identity)/ 世代 / 掛け合わせ親 / 活動 / 適応 /
+          // 速さ / 群れ / 筆の長さ / 齢 / 状態。すべて素の数値・等幅整列
+          // (デバッグ表示と同じ機械的な羅列。spd/flk/len は画面で見える違いと対応)
           row.innerHTML =
-            '<span class="id"></span><span class="chip"></span>' +
-            '<span class="bar"><span class="fill"></span></span>' +
-            '<span class="peak"></span><span class="state"></span>';
+            '<span class="chip"></span>' +
+            '<span class="gen"></span>' +
+            '<span class="from"></span>' +
+            '<span class="act"></span>' +
+            '<span class="fit"></span>' +
+            '<span class="spd"></span>' +
+            '<span class="flk"></span>' +
+            '<span class="len"></span>' +
+            '<span class="age"></span>' +
+            '<span class="state"></span>';
         }
         hudRowsEl.appendChild(row); // 配列順に並べ直し(既存ノードは移動になる)
 
         const g = sp.genome;
         const hue = (((hue0 + g.hueOffset) % 360) + 360) % 360;
-        const col = `hsla(${hue | 0}, ${(g.satBase * 100) | 0}%, ` +
-          `${(g.lumBase * 100 + 6) | 0}%, ` +
-          `${((0.3 + 0.7 * sp.activity) * Math.max(0.2, sp.opacity)).toFixed(2)})`;
-        row.children[0].textContent = sp.parentGens                   // id + 系譜
-          ? `#${sp.generation}‹${sp.parentGens[0]}×${sp.parentGens[1]}`
-          : `#${sp.generation}`;
-        row.children[1].style.backgroundColor = col;                  // chip
-        const fill = row.children[2].firstChild;                      // bar > fill
-        fill.style.backgroundColor = col;
-        fill.style.width = `${Math.round(Math.min(1, sp.activity) * 100)}%`;
-        row.children[3].textContent = `${g.dayPhase.toFixed(1)}h`;    // peak
-        row.children[4].textContent =                                 // state
-          sp.state === 'in' ? 'IN' : sp.state === 'out' ? 'OUT' : '';
+        // チップは常に純粋な遺伝子色(活動や誕生/退場で薄めない = どの色の種族か常に分かる)
+        const chipCol = `hsl(${hue | 0}, ${(g.satBase * 100) | 0}%, ${(g.lumBase * 100 + 8) | 0}%)`;
+        row.children[0].style.backgroundColor = chipCol;             // chip(identity・純色)
+        row.children[1].textContent = sp.generation;                 // 世代(今の種族)
+        row.children[2].textContent = sp.parentGens                  // 掛け合わせ親(系譜)
+          ? `${sp.parentGens[0]}×${sp.parentGens[1]}`
+          : '';
+        row.children[3].textContent = dec2(sp.activity);             // 活動(いまの目覚め度)
+        row.children[4].textContent = dec2(Genome.fitness(g, h));    // 適応(現時刻への合い具合)
+        row.children[5].textContent = dec2((g.speed - 0.3) / 1.3);   // 速さ(0..1 正規化)
+        row.children[6].textContent = dec2((g.cohesion + g.alignment) / 2); // 群れ(0..1)
+        row.children[7].textContent = dec2((g.strokeLen - 7) / 15);  // 筆の長さ(0..1)
+        row.children[8].textContent = ageText(sp.ageSec);            // 齢(m:ss)
+
+        // state: 退場(↓out)を最優先、次に新星の輝き(✦nova)、誕生(in)
+        const stateEl = row.children[9];
+        if (sp.state === 'out') {
+          stateEl.textContent = '↓out';
+          stateEl.classList.remove('nova');
+        } else if (sp.novaGlow > 0.02) {
+          stateEl.textContent = '✦nova';
+          stateEl.classList.add('nova');
+        } else {
+          stateEl.textContent = sp.state === 'in' ? 'in' : '·';
+          stateEl.classList.remove('nova');
+        }
       } catch (e) {
         // 1 行のエラーで観測パネル全体が止まらないように。内容は診断表示で見える
         ErrorLog.push('hud row: ' + e.message);
@@ -301,6 +357,20 @@
     for (const [sid, el] of existing) {
       if (!seen.has(sid)) el.remove();
     }
+
+    // 事象ログ: 直近の誕生(↑)/退場(↓)/大変異(✦)/参入(+)を新しい順に。
+    // 高さを動かさないため常に 3 行ぶん描く(無いぶんは空行で予約)。
+    // 経過秒(+Ns)が刻々と増え、止まっていても「観察者の手帳」が静かに動く
+    const show = evolution.eventLog.slice(-3).reverse();
+    let logHtml = '';
+    for (let i = 0; i < 3; i++) {
+      const e = show[i];
+      if (!e) { logHtml += '<div class="ev">&nbsp;</div>'; continue; }
+      const age = Math.max(0, env.time - e.time) | 0;
+      const cls = e.glyph === '✦' ? 'ev nova' : 'ev';
+      logHtml += `<div class="${cls}">${e.glyph} ${e.label}<span class="evt"> +${age}s</span></div>`;
+    }
+    hudLogEl.innerHTML = logHtml;
   }
 
   function updateDebug() {
@@ -360,6 +430,13 @@
     resetEvolution() {
       evolution.reset(env);
       paintFull();
+    },
+    // 動作確認用: いますぐ世代交代を 1 回起こし、大変異(新星の輝き)を強制する。
+    // 大変異は確率 5%(平均 1 時間に 1 回)でしか起きないため、演出確認の手段として用意
+    forceNova() {
+      evolution.genTimer = 0;
+      evolution.step(env, true);
+      return 'forced a big-mutation birth';
     },
     // デバッグ用: seconds 秒ぶんを一気にシミュレートして描く。
     // rAF が止まる環境(オフスクリーン確認など)でも絵と進化を検証できる

@@ -24,6 +24,14 @@ class Evolution {
     this.storageKey = 'art-evolution-v2'; // 遺伝子構成が変わったら番号を上げる(旧データを無効化)
     this.demoStartHour = Math.random() * 24;
     this.simOffsetMs = 0; // App.simulate() 用の仮想経過時間(デモモードのみ作用)
+    // 観測台帳の事象ログ(誕生/退場/大変異)。観察者の手帳。保存しない実行時状態
+    this.eventLog = [];
+  }
+
+  // 事象を1件記帳(env.time 基準の相対秒で経過を表示するため time を持つ)
+  pushEvent(time, glyph, label) {
+    this.eventLog.push({ time, glyph, label });
+    if (this.eventLog.length > 6) this.eventLog.shift();
   }
 
   // 仮想時刻(0..24)。デモモードでは 1 日が約 3 分で回る
@@ -78,11 +86,12 @@ class Evolution {
     if (aliveCount < TARGET_SPECIES) {
       const g = Genome.random(env.hour);
       this.species.push(new Species(g, this.perSpeciesCount(), this.generation, env, { fadeIn: true }));
+      this.pushEvent(env.time, '+', `${this.generation}`); // 新規参入(系譜なし)
     }
   }
 
-  // 世代交代イベント
-  step(env) {
+  // 世代交代イベント。forceBig = true で大変異を強制(動作確認用)
+  step(env, forceBig) {
     const alive = this.species.filter(s => s.state !== 'out');
     if (alive.length < 2) return;
     // 選択は「少し先の時刻」を基準にする。
@@ -90,21 +99,28 @@ class Evolution {
     const hour = (env.hour + 1.5) % 24;
 
     const scored = alive.map(s => ({ s, f: Genome.fitness(s.genome, hour) }));
-    // ニッチ分化(fitness sharing): 活動ピークが他種族と被るほど割引。
-    // これがないと全種族が現在時刻型に収束して多様性が死ぬ
+    // ニッチ分化(fitness sharing): 他種族と「活動時間帯」または「色」が
+    // 被るほど割引。これがないと全種族が現在時刻型・似た色に収束して多様性が死ぬ。
+    // 時間帯(係数 0.6)を主軸に、色(係数 0.4)を従に。色を選択圧に入れることで
+    // 画面が「色とりどりの箱庭」に保たれる
     for (const e of scored) {
-      let crowd = 0;
+      let timeCrowd = 0, hueCrowd = 0;
       for (const o of scored) {
         if (o === e) continue;
         const d = Genome.circularDist(e.s.genome.dayPhase, o.s.genome.dayPhase, 24);
-        crowd += Math.max(0, 1 - d / 6);
+        timeCrowd += Math.max(0, 1 - d / 6);
+        const hd = Math.abs(e.s.genome.hueOffset - o.s.genome.hueOffset);
+        hueCrowd += Math.max(0, 1 - hd / 60); // 色相ずれが 60 度以内で被りとみなす
       }
-      e.f = e.f / (1 + crowd * 0.6);
+      // 係数はオフラインのスイープで調整(色相が常時 3〜4 グループに分かれる点)。
+      // 強すぎる(例 0.8)とかえって単色に崩壊するので上げすぎない
+      e.f = e.f / (1 + timeCrowd * 0.6 + hueCrowd * 0.6);
     }
     scored.sort((a, b) => a.f - b.f);
 
     // 最も時刻に合わない種族が静かに退場
     scored[0].s.state = 'out';
+    this.pushEvent(env.time, '↓', `${scored[0].s.generation}`);
 
     // 残りから適応度比例で親を 2 種族選ぶ(+0.05 は全滅回避の下駄)
     const pool = scored.slice(1);
@@ -123,12 +139,23 @@ class Evolution {
     let guard = 8;
     while (pb === pa && pool.length > 1 && guard-- > 0) pb = pickParent();
 
-    const childGenome = Genome.mutate(Genome.crossover(pa.genome, pb.genome));
+    const childGenome = Genome.mutate(Genome.crossover(pa.genome, pb.genome), forceBig);
+    // 大変異かどうかは誕生演出(新星の輝き)にだけ使う一時情報。
+    // genome に残すと保存 JSON に混ざるので、ここで取り出して捨てる
+    const nova = !!childGenome._bigMutation;
+    delete childGenome._bigMutation;
+    // 大変異は「色の飛躍」を伴う: 親から大きく離れた色で生まれ、
+    // 一目で新しい系統と分かる。輝き演出とあわせて変異を可視化する
+    if (nova) {
+      childGenome.hueOffset = Genome.leapHue(pa.genome.hueOffset, pb.genome.hueOffset);
+    }
     this.generation++;
+    this.pushEvent(env.time, nova ? '✦' : '↑', `${this.generation} ‹${pa.generation}×${pb.generation}`);
     // 子の粒子は親 2 種族の粒子の現在位置から湧き出す(交叉が画面に見える)
     this.species.push(new Species(childGenome, this.perSpeciesCount(), this.generation, env, {
       fadeIn: true,
       parents: [pa, pb],
+      nova,
     }));
     this.save();
   }
@@ -141,7 +168,7 @@ class Evolution {
         generation: this.generation,
         genomes: this.species
           .filter(s => s.state !== 'out')
-          .map(s => ({ g: s.genome, gen: s.generation, p: s.parentGens })),
+          .map(s => ({ g: s.genome, gen: s.generation, p: s.parentGens, age: Math.round(s.ageSec) })),
         savedAt: Date.now(),
       };
       localStorage.setItem(this.storageKey, JSON.stringify(data));
@@ -165,6 +192,7 @@ class Evolution {
         }
         return new Species(genome, this.perSpeciesCount(), e.gen || 1, env, {
           parentGens: Array.isArray(e.p) ? e.p : null,
+          ageSec: typeof e.age === 'number' ? e.age : 0,
         });
       });
       return true;

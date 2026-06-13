@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ART - Evolving Light Wallpaper</title>
+<title>生命の夜 — A Night of Life</title>
 <style>
   :root {
     /* タスクバーに隠れないよう持ち上げる量。Lively 起動時は
@@ -36,63 +36,108 @@
     padding: 6px 9px;
     border-radius: 4px;
   }
-  /* 右下の常設システム表示(観測パネル) */
+  /* 右下の常設観測台帳(OBSERVATORIUM)。
+     装飾でなく計器として読ませる: 等幅・角無し・transition 無し・背景パネル無し
+     (透明 + 影のみ = 観察者が画面に直接書き込んだ記録の質感)。
+     数値とブロック文字で語り、滑らかなアニメーションは持たない */
   #hud {
     position: fixed;
     right: 16px;
     bottom: calc(14px + var(--bottom-offset));
-    text-align: right;
-    color: rgba(255, 255, 255, 0.38);
-    font: 11px/1.7 Consolas, 'Courier New', monospace;
-    letter-spacing: 0.14em;
+    text-align: left;
+    color: rgba(255, 255, 255, 0.46);
+    font: 11px/16px Consolas, 'Courier New', monospace;
+    letter-spacing: 0.06em;
     pointer-events: none;
     user-select: none;
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
   }
+  /* 各部の高さを固定し、種族数や事象数が変わっても台帳が上下しないようにする */
+  #hud .meta {
+    height: 16px;
+    color: rgba(255, 255, 255, 0.55);
+    margin-bottom: 5px;
+  }
+  /* 種族行は最大 6(常時 5 + 退場中 1)ぶんの高さを必ず確保 = 行の増減で動かない */
   #hud .rows {
-    margin-top: 5px;
     display: flex;
     flex-direction: column;
-    gap: 3px;
+    min-height: 96px;
   }
   #hud .row {
     display: flex;
     align-items: center;
-    gap: 7px;
-    justify-content: flex-end;
-  }
-  #hud .chip {
-    width: 12px;
-    height: 3px;
-    border-radius: 1.5px;
-    transition: background-color 0.8s linear;
-  }
-  #hud .id {
-    min-width: 88px;
-    text-align: right;
+    gap: 9px;
+    height: 16px;
+    justify-content: flex-start;
     white-space: nowrap;
   }
-  #hud .bar {
-    width: 46px;
-    height: 3px;
-    background: rgba(255, 255, 255, 0.09);
-    border-radius: 1.5px;
-    overflow: hidden;
+  /* 色チップ = 種族の identity。常に純色・角無し・transition 無し */
+  #hud .chip {
+    width: 8px;
+    height: 8px;
+    flex: none;
   }
-  #hud .fill {
-    display: block;
-    height: 100%;
-    width: 0;
-    transition: width 0.9s ease, background-color 0.8s linear;
-  }
-  #hud .peak {
-    min-width: 40px;
+  /* 世代(今の種族)。掛け合わせ親とは別の列にして見分けやすく */
+  #hud .gen {
+    min-width: 30px;
     text-align: right;
   }
+  /* 掛け合わせ親(系譜)。現世代と分けて、控えめな色で */
+  #hud .from {
+    min-width: 50px;
+    text-align: left;
+    color: rgba(255, 255, 255, 0.34);
+  }
+  /* 機械的な数値列: 素の数字を右寄せで等幅整列(デバッグ表示と同じ羅列の質感)。
+     自作のバー・グリフは使わない。spd=速さ flk=群れ len=筆の長さ(いずれも 0..1) */
+  #hud .act,
+  #hud .fit,
+  #hud .spd,
+  #hud .flk,
+  #hud .len {
+    min-width: 32px;
+    text-align: right;
+    color: rgba(255, 255, 255, 0.62);
+  }
+  #hud .age { min-width: 44px; text-align: right; }
   #hud .state {
-    min-width: 26px;
+    min-width: 38px;
     text-align: left;
     color: rgba(255, 255, 255, 0.55);
+  }
+  /* 列見出し(一度だけ薄く)。数値列の上にラベルを置いて表として読ませる */
+  #hud .head {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    height: 16px;
+  }
+  /* 見出しは列の色に関わらず一律で薄く */
+  #hud .head span {
+    color: rgba(255, 255, 255, 0.3);
+  }
+  /* 大変異の誕生(新星の輝き)中だけ、状態表示が金色に灯る */
+  #hud .state.nova {
+    color: rgba(255, 226, 160, 0.92);
+  }
+  /* 事象ログ(誕生 ↑ / 退場 ↓ / 大変異 ✦ / 参入 +)。観察者の手帳。
+     常に 3 行ぶんを確保し、上の罫線も固定位置 = ここも上下しない */
+  #hud .log {
+    margin-top: 5px;
+    padding-top: 5px;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.32);
+  }
+  #hud .ev {
+    height: 16px;
+    white-space: nowrap;
+  }
+  #hud .ev .evt {
+    color: rgba(255, 255, 255, 0.24);
+  }
+  #hud .ev.nova {
+    color: rgba(255, 226, 160, 0.7);
   }
 </style>
 </head>
@@ -101,7 +146,20 @@
 <div id="debug" hidden></div>
 <div id="hud" hidden>
   <div class="meta"></div>
+  <div class="head">
+    <span class="chip"></span>
+    <span class="gen">gen</span>
+    <span class="from">from</span>
+    <span class="act">act</span>
+    <span class="fit">fit</span>
+    <span class="spd">spd</span>
+    <span class="flk">flk</span>
+    <span class="len">len</span>
+    <span class="age">age</span>
+    <span class="state"></span>
+  </div>
   <div class="rows"></div>
+  <div class="log"></div>
 </div>
 <script src="js/noise.js"></script>
 <script src="js/genome.js"></script>

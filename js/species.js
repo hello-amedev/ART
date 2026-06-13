@@ -68,6 +68,8 @@ class Species {
   // opts.parents    … 親 2 種族。粒子が親たちの現在位置から湧き出す(交叉の可視化)。
   //                    「2 つの流れの中から新しい色が生まれてくる」が画面で見える
   // opts.parentGens … 復元時に系譜だけ引き継ぐ([親世代, 親世代])
+  // opts.nova       … 大変異の誕生。しばらく「新星の輝き」(ひときわ明るい筆致)をまとう
+  // opts.ageSec     … 復元時に生きてきた時間(齢)を引き継ぐ
   constructor(genome, count, generation, env, opts = {}) {
     this.genome = genome;
     this.generation = generation;
@@ -75,6 +77,10 @@ class Species {
     this.opacity = opts.fadeIn ? 0 : 1;
     this.state = opts.fadeIn ? 'in' : 'alive'; // 'in' | 'alive' | 'out'
     this.activity = 0.5;                       // 時刻適応度からくる元気さ 0..1
+    this.isNovaBirth = !!opts.nova;            // 大変異として生まれたか(誕生演出の制御に使う)
+    this.nova = opts.nova ? 1 : 0;             // 新星の輝きの燃料(1 → 0 へ減衰)。保存されない
+    this.novaGlow = 0;                         // 実際の輝きの強さ 0..1(燃料から算出。swell→fade)
+    this.ageSec = opts.ageSec || 0;            // 生きてきた時間(画面に存在した累積秒)
     this.particles = [];
     this.parentGens = opts.parentGens ||
       (opts.parents ? opts.parents.map(s => s.generation) : null);
@@ -140,17 +146,34 @@ class Species {
   update(dt, env) {
     const g = this.genome;
     const dtF = Math.min(dt * 60, 1.8); // 60fps を 1 とするステップ倍率
+    const demo = (typeof Flags !== 'undefined' && Flags.demo);
 
-    // 誕生・退場のフェード(デモモードでは世代交代も速いので短縮)
-    const fadeSec = (typeof Flags !== 'undefined' && Flags.demo) ? 8 : 40;
+    this.ageSec += dt; // 齢を刻む(無常さの可視化: 観測パネルに表示)
+
+    // 新星の輝き(大変異の誕生演出)。燃料 nova は一方向に減るだけ。
+    // 見た目の強さ novaGlow は「素早く立ち上がり → ゆっくり尾を引いて消える」一発の閃光
+    // (誕生という一度きりの出来事。周期的な明滅とは別物なので禁じ手には当たらない)
+    if (this.nova > 0) {
+      const novaSec = demo ? 15 : 90;
+      this.nova = Math.max(0, this.nova - dt / novaSec);
+      const age01 = 1 - this.nova;                       // 0(誕生)→ 1(燃え尽き)
+      this.novaGlow = Math.sin(Math.PI * Math.pow(age01, 0.32)); // 約 1 割の時点で最大
+    } else {
+      this.novaGlow = 0;
+    }
+
+    // 誕生・退場のフェード(デモモードでは世代交代も速いので短縮)。
+    // 大変異の誕生だけは「点火」のように素早く立ち上がり、輝きのピークに間に合わせる
+    const fadeInSec = this.isNovaBirth ? (demo ? 1.5 : 10) : (demo ? 8 : 40);
+    const fadeOutSec = demo ? 8 : 40;
     if (this.state === 'in') {
-      this.opacity += dt / fadeSec;
+      this.opacity += dt / fadeInSec;
       if (this.opacity >= 1) {
         this.opacity = 1;
         this.state = 'alive';
       }
     } else if (this.state === 'out') {
-      this.opacity -= dt / fadeSec;
+      this.opacity -= dt / fadeOutSec;
       if (this.opacity < 0) this.opacity = 0;
     }
 

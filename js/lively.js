@@ -71,6 +71,9 @@ function livelyPropertyListener(name, val) {
         `${Math.max(0, val | 0)}px`
       );
       break;
+    case 'forceNova':
+      if (window.App) App.forceNova();
+      break;
     case 'resetEvolution':
       if (window.App) App.resetEvolution();
       break;

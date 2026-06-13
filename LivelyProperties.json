@@ -54,6 +54,11 @@
     "text": "診断表示(不具合調査用)",
     "value": false
   },
+  "forceNova": {
+    "type": "button",
+    "text": "大変異を 1 回起こす(演出の確認用)",
+    "value": "force"
+  },
   "resetEvolution": {
     "type": "button",
     "text": "進化をリセット(第 1 世代から)",

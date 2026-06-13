@@ -2,7 +2,7 @@
   "particleCount": {
     "type": "slider",
     "text": "粒子の量",
-    "value": 1200,
+    "value": 1800,
     "min": 300,
     "max": 3000,
     "step": 100

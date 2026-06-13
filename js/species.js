@@ -77,6 +77,7 @@ class Species {
     this.opacity = opts.fadeIn ? 0 : 1;
     this.state = opts.fadeIn ? 'in' : 'alive'; // 'in' | 'alive' | 'out'
     this.activity = 0.5;                       // 時刻適応度からくる元気さ 0..1
+    this.vigor = 0.5;                          // 家系の勢い(子を残すと増え、残せないと衰える)。保存しない
     this.isNovaBirth = !!opts.nova;            // 大変異として生まれたか(誕生演出の制御に使う)
     this.nova = opts.nova ? 1 : 0;             // 新星の輝きの燃料(1 → 0 へ減衰)。保存されない
     this.novaGlow = 0;                         // 実際の輝きの強さ 0..1(燃料から算出。swell→fade)

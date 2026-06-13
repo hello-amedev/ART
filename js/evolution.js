@@ -116,20 +116,35 @@ class Evolution {
       // 強すぎる(例 0.8)とかえって単色に崩壊するので上げすぎない
       e.f = e.f / (1 + timeCrowd * 0.6 + hueCrowd * 0.6);
     }
-    scored.sort((a, b) => a.f - b.f);
+    // 家系の勢い(vigor): 世代交代のたびに全員わずかに衰える。
+    // 子を残せた家系だけが勢いを保ち、途絶えた家系は衰えて消える(無常・継承)
+    for (const e of scored) e.s.vigor *= 0.82;
 
-    // 最も時刻に合わない種族が静かに退場
-    scored[0].s.state = 'out';
-    this.pushEvent(env.time, '↓', `${scored[0].s.generation}`);
+    // 退場: 勢いが尽きた家系を優先(時刻適応は弱い味付け 0.2)。
+    // 生まれたばかりの種は猶予期間で保護し、子を残す機会を与える
+    const interval = Flags.demo ? 14 : Settings.evolutionMinutes * 60;
+    const grace = interval * 1.5;
+    const endable = scored.filter(e => e.s.ageSec >= grace);
+    const endPool = endable.length ? endable : scored;
+    let out = endPool[0];
+    let outScore = Infinity;
+    for (const e of endPool) {
+      const endScore = e.s.vigor * 0.8 + Math.min(1, e.f) * 0.2;
+      if (endScore < outScore) { outScore = endScore; out = e; }
+    }
+    out.s.state = 'out';
+    this.pushEvent(env.time, '↓', `${out.s.generation}`);
 
-    // 残りから適応度比例で親を 2 種族選ぶ(+0.05 は全滅回避の下駄)
-    const pool = scored.slice(1);
+    // 親選択: 勢い(0.6)を主軸に、時刻適応(0.4)を従に。
+    // 時計依存を薄め、「子を残し続ける家系が栄える」=継承そのものを選択圧にする
+    const pool = scored.filter(e => e.s !== out.s);
+    const weightOf = (e) => e.s.vigor * 0.6 + Math.max(0, e.f) * 0.4 + 0.05;
     const pickParent = () => {
       let total = 0;
-      for (const e of pool) total += e.f + 0.05;
+      for (const e of pool) total += weightOf(e);
       let r = Math.random() * total;
       for (const e of pool) {
-        r -= e.f + 0.05;
+        r -= weightOf(e);
         if (r <= 0) return e.s;
       }
       return pool[pool.length - 1].s;
@@ -138,6 +153,9 @@ class Evolution {
     let pb = pickParent();
     let guard = 8;
     while (pb === pa && pool.length > 1 && guard-- > 0) pb = pickParent();
+    // 親は子を残した = 家系の勢いが増す
+    pa.vigor += 0.4 * (1 - pa.vigor);
+    pb.vigor += 0.4 * (1 - pb.vigor);
 
     const childGenome = Genome.mutate(Genome.crossover(pa.genome, pb.genome), forceBig);
     // 大変異かどうかは誕生演出(新星の輝き)にだけ使う一時情報。

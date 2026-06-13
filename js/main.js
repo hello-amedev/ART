@@ -310,7 +310,7 @@
             '<span class="gen"></span>' +
             '<span class="from"></span>' +
             '<span class="act"></span>' +
-            '<span class="fit"></span>' +
+            '<span class="vig"></span>' +
             '<span class="spd"></span>' +
             '<span class="flk"></span>' +
             '<span class="len"></span>' +
@@ -324,12 +324,17 @@
         // チップは常に純粋な遺伝子色(活動や誕生/退場で薄めない = どの色の種族か常に分かる)
         const chipCol = `hsl(${hue | 0}, ${(g.satBase * 100) | 0}%, ${(g.lumBase * 100 + 8) | 0}%)`;
         row.children[0].style.backgroundColor = chipCol;             // chip(identity・純色)
+        // 相続グロー: 誕生中(in)は行が自分の色(=親から受け継いだ色)でうっすら灯り、
+        // 馴染むにつれ消える。新しい血が入った瞬間が台帳でも分かる
+        row.style.backgroundColor = sp.state === 'in'
+          ? `hsla(${hue | 0}, ${(g.satBase * 100) | 0}%, ${(g.lumBase * 100 + 8) | 0}%, ${((1 - sp.opacity) * 0.22).toFixed(3)})`
+          : '';
         row.children[1].textContent = sp.generation;                 // 世代(今の種族)
         row.children[2].textContent = sp.parentGens                  // 掛け合わせ親(系譜)
           ? `${sp.parentGens[0]}×${sp.parentGens[1]}`
           : '';
         row.children[3].textContent = dec2(sp.activity);             // 活動(いまの目覚め度)
-        row.children[4].textContent = dec2(Genome.fitness(g, h));    // 適応(現時刻への合い具合)
+        row.children[4].textContent = dec2(sp.vigor);                // 家系の勢い(子を残せているか)
         row.children[5].textContent = dec2((g.speed - 0.3) / 1.3);   // 速さ(0..1 正規化)
         row.children[6].textContent = dec2((g.cohesion + g.alignment) / 2); // 群れ(0..1)
         row.children[7].textContent = dec2((g.strokeLen - 7) / 15);  // 筆の長さ(0..1)

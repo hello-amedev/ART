@@ -91,11 +91,11 @@ const Genome = (() => {
     return child;
   }
 
-  // 突然変異。まれに「大変異」が起こり、まったく新しい系統が生まれる。
-  // forceBig は動作確認用(Lively 設定の「大変異を 1 回起こす」ボタン)
+  // 遺伝子の突然変異。ときおり「大きな突然変異」が起こり、親とまるで違う新しい系統が生まれる
+  // (計器に ✦ が灯る一族)。forceBig は動作確認用(設定の「突然変異を 1 回起こす」ボタン)
   function mutate(g, forceBig) {
     const out = Object.assign({}, g);
-    const big = forceBig || Math.random() < 0.05;
+    const big = forceBig || Math.random() < 0.15;
     const rate = big ? 0.65 : 0.18;
     for (const key of KEYS) {
       if (Math.random() >= rate) continue;
@@ -110,8 +110,8 @@ const Genome = (() => {
     return out;
   }
 
-  // 大変異の「色の飛躍」: 親 2 種の色相ずれの重心と反対側、範囲の端寄りへ飛ばす。
-  // 大変異が「見たことのない色の一族」として一目で分かるようにするための専用処理。
+  // 大きな突然変異の「色の飛躍」: 親 2 種の色相ずれの重心と反対側、範囲の端寄りへ飛ばす。
+  // 大きな突然変異が「見たことのない色の一族」として一目で分かるようにするための専用処理。
   // 通常の交叉・突然変異だけでは色が親の中間に寄り、変異が視覚的に埋もれてしまう
   function leapHue(a, b) {
     const def = GENES.hueOffset;

@@ -24,7 +24,7 @@ class Evolution {
     this.storageKey = 'art-evolution-v2'; // 遺伝子構成が変わったら番号を上げる(旧データを無効化)
     this.demoStartHour = Math.random() * 24;
     this.simOffsetMs = 0; // App.simulate() 用の仮想経過時間(デモモードのみ作用)
-    // 観測台帳の事象ログ(誕生/退場/大変異)。観察者の手帳。保存しない実行時状態
+    // 観測台帳の事象ログ(誕生/退場/突然変異)。観察者の手帳。保存しない実行時状態
     this.eventLog = [];
   }
 
@@ -90,7 +90,7 @@ class Evolution {
     }
   }
 
-  // 世代交代イベント。forceBig = true で大変異を強制(動作確認用)
+  // 世代交代イベント。forceBig = true で大きな突然変異を強制(動作確認用)
   step(env, forceBig) {
     const alive = this.species.filter(s => s.state !== 'out');
     if (alive.length < 2) return;
@@ -158,12 +158,12 @@ class Evolution {
     pb.vigor += 0.4 * (1 - pb.vigor);
 
     const childGenome = Genome.mutate(Genome.crossover(pa.genome, pb.genome), forceBig);
-    // 大変異かどうかは誕生演出(新星の輝き)にだけ使う一時情報。
+    // 大きな突然変異かどうかは計器の ✦ 印にだけ使う一時情報。
     // genome に残すと保存 JSON に混ざるので、ここで取り出して捨てる
     const nova = !!childGenome._bigMutation;
     delete childGenome._bigMutation;
-    // 大変異は「色の飛躍」を伴う: 親から大きく離れた色で生まれ、
-    // 一目で新しい系統と分かる。輝き演出とあわせて変異を可視化する
+    // 大きな突然変異は「色の飛躍」を伴う: 親から大きく離れた色で生まれ、
+    // 一目で新しい系統と分かる。発光ではなく色そのもので変異を見せる
     if (nova) {
       childGenome.hueOffset = Genome.leapHue(pa.genome.hueOffset, pb.genome.hueOffset);
     }

@@ -9,17 +9,22 @@
  * ブラウザで直接開いた場合は一切呼ばれず、以下のデフォルト値で動く。
  */
 
+// スマホ等の小さな画面 / モバイル端末では粒子を控えめにして描画負荷を下げる。
+// これはブラウザで直接開いた時の初期値。Lively は LivelyProperties.json の値で上書きする
+const isSmallScreen =
+  Math.min(window.innerWidth || 9999, window.innerHeight || 9999) < 560 ||
+  /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+
 const Settings = {
-  particleCount: 1200,
+  particleCount: isSmallScreen ? 500 : 1200,
   evolutionMinutes: 3,
   brightness: 1.0,   // 1.0 = 100%
   trailLength: 0.5,  // 0..1(軌跡の長さ)
   ecoMode: false,    // true で 30fps に間引き
   showHud: true,     // 右下のシステム表示(世代・時刻・種族チップ)
-  diagMode: false,   // 左下に診断情報(不具合調査用。Lively の設定からオンにできる)
 };
 
-// 実行時エラーの収集(診断表示用)。Lively 内では DevTools が見られないため、
+// 実行時エラーの収集(開発用 ?debug の診断表示で見せる)。Lively 内では DevTools が見られないため、
 // エラーは画面に出せるよう貯めておく
 const ErrorLog = [];
 window.addEventListener('error', (e) => {
@@ -59,9 +64,6 @@ function livelyPropertyListener(name, val) {
       break;
     case 'showHud':
       Settings.showHud = !!val;
-      break;
-    case 'diagMode':
-      Settings.diagMode = !!val;
       break;
     case 'bottomMargin':
       // Lively の壁紙はタスクバーの裏まで描画されるため、

@@ -77,19 +77,6 @@
     return 0.5 - 0.5 * Math.cos(((hour - 4) / 24) * TAU);
   }
 
-  // 活動ピーク時刻(0..24) → 時間帯の言葉。数値より「いつ栄える種族か」が伝わる。
-  // 色の物語(深夜の藍→曙の紫紅→朝の金→昼の空色→夕の茜→宵の紫→夜の藍)に対応
-  function dayPhaseWord(hour) {
-    const h = ((hour % 24) + 24) % 24;
-    if (h < 4) return '夜';
-    if (h < 6.5) return '曙';
-    if (h < 10) return '朝';
-    if (h < 15) return '昼';
-    if (h < 18) return '夕';
-    if (h < 21) return '宵';
-    return '夜';
-  }
-
   // 生きてきた時間(齢)をストップウォッチ式 m:ss で。単位漢字を使わず一貫表記。
   // 無常さ — 誰が古株で誰が新参かが、増え続ける一つの数で分かる
   function ageText(sec) {
@@ -198,14 +185,12 @@
     for (const sp of evolution.species) {
       if (sp.opacity <= 0.005) continue;
       const g = sp.genome;
-      // 新星の輝き(大変異の誕生演出): ひときわ明るく・冴えた色で・太い筆致で生まれ、
-      // 一発の閃光として立ち上がってから長い余韻を引いて通常へ収束する。
-      // novaGlow は species 側で算出済み(swell→fade。周期的な明滅ではない)
-      const nv = sp.novaGlow || 0;
-      const alphaBase = 0.15 * sp.opacity * (0.35 + 0.65 * sp.activity) * bright * (1 + 1.5 * nv);
+      // 突然変異で生まれた一族も特別な発光はさせない。変異のインパクトは「親と違う冴えた色」
+      // そのもので見せる(強く光らせると色が飛んで、かえって変異が分からなくなるため)
+      const alphaBase = 0.15 * sp.opacity * (0.35 + 0.65 * sp.activity) * bright;
       const coreAlpha = alphaBase.toFixed(3);
       const sat = Math.min(96, g.satBase * 100 * satMod) | 0;
-      const lum = (Math.min(78, g.lumBase * 100 + 6 + nv * 16)) | 0;
+      const lum = (Math.min(78, g.lumBase * 100 + 6)) | 0;
 
       // 粒子は進行方向を向いた「前後対称の短い光の針」として描く。
       // 頭も尾もないシルエット = 無機的な筆致。彗星型は生物っぽく見える
@@ -215,8 +200,8 @@
         const ca = Math.cos(p.a) * half;
         const sa = Math.sin(p.a) * half;
         ctx.strokeStyle = `hsla(${hue},${sat}%,${lum}%,${coreAlpha})`;
-        // 細く。「点」でなく「線」に見える太さ(新星の輝き中は太く力強い筆致に)
-        ctx.lineWidth = g.glowSize * p.sizeJ * 0.55 * (1 + 0.7 * nv);
+        // 細く。「点」でなく「線」に見える太さ
+        ctx.lineWidth = g.glowSize * p.sizeJ * 0.55;
         ctx.beginPath();
         ctx.moveTo(p.x - ca, p.y - sa);
         ctx.lineTo(p.x + ca, p.y + sa);
@@ -259,7 +244,7 @@
     draw();
 
     updateHud(dt);
-    if (Flags.debug || Settings.diagMode) updateDebug();
+    if (Flags.debug) updateDebug();
     else if (!debugEl.hidden) debugEl.hidden = true;
   }
 
@@ -283,7 +268,7 @@
     const hh = String(h | 0).padStart(2, '0');
     const mm = String(((h % 1) * 60) | 0).padStart(2, '0');
     hudMetaEl.textContent =
-      `A NIGHT OF LIFE   gen ${evolution.generation} · ${dayPhaseWord(h)} ${hh}:${mm}${Flags.demo ? ' · demo' : ''}`;
+      `A NIGHT OF LIFE   gen ${evolution.generation} · ${hh}:${mm}${Flags.demo ? ' · demo' : ''}`;
 
     const sps = evolution.species;
     const hue0 = baseHue(h);
@@ -340,20 +325,20 @@
         row.children[7].textContent = dec2((g.strokeLen - 7) / 15);  // 筆の長さ(0..1)
         row.children[8].textContent = ageText(sp.ageSec);            // 齢(m:ss)
 
-        // state: 退場(↓out)を最優先、次に新星の輝き(✦nova)、誕生(in)
+        // state: 退場(↓out)を最優先、次に突然変異の印(✦ マークのみ)、誕生(in)
         const stateEl = row.children[9];
         if (sp.state === 'out') {
           stateEl.textContent = '↓out';
           stateEl.classList.remove('nova');
-        } else if (sp.novaGlow > 0.02) {
-          stateEl.textContent = '✦nova';
+        } else if (sp.nova > 0) {
+          stateEl.textContent = '✦';
           stateEl.classList.add('nova');
         } else {
           stateEl.textContent = sp.state === 'in' ? 'in' : '·';
           stateEl.classList.remove('nova');
         }
       } catch (e) {
-        // 1 行のエラーで観測パネル全体が止まらないように。内容は診断表示で見える
+        // 1 行のエラーで観測パネル全体が止まらないように。内容は ?debug で見える
         ErrorLog.push('hud row: ' + e.message);
         if (ErrorLog.length > 5) ErrorLog.shift();
       }
@@ -363,7 +348,7 @@
       if (!seen.has(sid)) el.remove();
     }
 
-    // 事象ログ: 直近の誕生(↑)/退場(↓)/大変異(✦)/参入(+)を新しい順に。
+    // 事象ログ: 直近の誕生(↑)/退場(↓)/突然変異(✦)/参入(+)を新しい順に。
     // 高さを動かさないため常に 3 行ぶん描く(無いぶんは空行で予約)。
     // 経過秒(+Ns)が刻々と増え、止まっていても「観察者の手帳」が静かに動く
     const show = evolution.eventLog.slice(-3).reverse();
@@ -393,8 +378,9 @@
         ` peak ${sp.genome.dayPhase.toFixed(1)}h w ${sp.genome.phaseWidth.toFixed(1)}`
       );
     }
-    // 環境の不具合調査用の診断情報(Lively 内では DevTools が見られないため画面に出す)
-    if (Settings.diagMode) {
+    // 環境の不具合調査用の診断情報(開発用。?debug 指定時のみ。
+    // Lively 内では DevTools が見られないため画面に出せるようにしてある)
+    if (Flags.debug) {
       let storageState = 'NG';
       let savedCount = '-';
       try {
@@ -436,8 +422,8 @@
       evolution.reset(env);
       paintFull();
     },
-    // 動作確認用: いますぐ世代交代を 1 回起こし、大変異(新星の輝き)を強制する。
-    // 大変異は確率 5%(平均 1 時間に 1 回)でしか起きないため、演出確認の手段として用意
+    // 動作確認用: いますぐ世代交代を 1 回起こし、大きな突然変異(親と違う色の一族)を強制する。
+    // 大きな突然変異は確率 15% でしか起きないため、確認の手段として用意
     forceNova() {
       evolution.genTimer = 0;
       evolution.step(env, true);
@@ -461,7 +447,7 @@
       }
       const ms = performance.now() - t0;
       updateHud(1);
-      if (Flags.debug || Settings.diagMode) updateDebug();
+      if (Flags.debug) updateDebug();
       return `simulated ${seconds}s (${n} frames) in ${ms.toFixed(0)}ms = ${(ms / n).toFixed(2)}ms/frame`;
     },
   };

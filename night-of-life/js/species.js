@@ -68,7 +68,7 @@ class Species {
   // opts.parents    … 親 2 種族。粒子が親たちの現在位置から湧き出す(交叉の可視化)。
   //                    「2 つの流れの中から新しい色が生まれてくる」が画面で見える
   // opts.parentGens … 復元時に系譜だけ引き継ぐ([親世代, 親世代])
-  // opts.nova       … 大変異の誕生。しばらく「新星の輝き」(ひときわ明るい筆致)をまとう
+  // opts.nova       … 大きな突然変異の誕生。計器に ✦ の印をしばらく灯すための目印(描画演出はしない)
   // opts.ageSec     … 復元時に生きてきた時間(齢)を引き継ぐ
   constructor(genome, count, generation, env, opts = {}) {
     this.genome = genome;
@@ -78,9 +78,7 @@ class Species {
     this.state = opts.fadeIn ? 'in' : 'alive'; // 'in' | 'alive' | 'out'
     this.activity = 0.5;                       // 時刻適応度からくる元気さ 0..1
     this.vigor = 0.5;                          // 家系の勢い(子を残すと増え、残せないと衰える)。保存しない
-    this.isNovaBirth = !!opts.nova;            // 大変異として生まれたか(誕生演出の制御に使う)
-    this.nova = opts.nova ? 1 : 0;             // 新星の輝きの燃料(1 → 0 へ減衰)。保存されない
-    this.novaGlow = 0;                         // 実際の輝きの強さ 0..1(燃料から算出。swell→fade)
+    this.nova = opts.nova ? 1 : 0;             // 突然変異で生まれた印のタイマー(1 → 0 へ減衰)。計器の ✦ 表示用。保存されない
     this.ageSec = opts.ageSec || 0;            // 生きてきた時間(画面に存在した累積秒)
     this.particles = [];
     this.parentGens = opts.parentGens ||
@@ -151,21 +149,16 @@ class Species {
 
     this.ageSec += dt; // 齢を刻む(無常さの可視化: 観測パネルに表示)
 
-    // 新星の輝き(大変異の誕生演出)。燃料 nova は一方向に減るだけ。
-    // 見た目の強さ novaGlow は「素早く立ち上がり → ゆっくり尾を引いて消える」一発の閃光
-    // (誕生という一度きりの出来事。周期的な明滅とは別物なので禁じ手には当たらない)
+    // 突然変異で生まれた印のタイマー。計器に ✦ をしばらく灯すためだけに使う。
+    // 描画上の発光演出はしない(光らせると肝心の「新しい色」が飛んで変異が見えなくなるため)
     if (this.nova > 0) {
       const novaSec = demo ? 15 : 90;
       this.nova = Math.max(0, this.nova - dt / novaSec);
-      const age01 = 1 - this.nova;                       // 0(誕生)→ 1(燃え尽き)
-      this.novaGlow = Math.sin(Math.PI * Math.pow(age01, 0.32)); // 約 1 割の時点で最大
-    } else {
-      this.novaGlow = 0;
     }
 
     // 誕生・退場のフェード(デモモードでは世代交代も速いので短縮)。
-    // 大変異の誕生だけは「点火」のように素早く立ち上がり、輝きのピークに間に合わせる
-    const fadeInSec = this.isNovaBirth ? (demo ? 1.5 : 10) : (demo ? 8 : 40);
+    // 突然変異も通常の誕生と同じ速さでフェードインする(特別な点火演出はしない)
+    const fadeInSec = demo ? 8 : 40;
     const fadeOutSec = demo ? 8 : 40;
     if (this.state === 'in') {
       this.opacity += dt / fadeInSec;

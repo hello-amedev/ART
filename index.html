@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AI for ART — ame_dev</title>
-<meta name="description" content="最高峰の AI を、競争のためでなく、ともにアートを作るために。AI for ART — 進化し続ける光のアート「生命の夜」。by ame_dev">
+<meta name="description" content="国家や企業を揺るがすほどの高性能 AI が個人の手元にある今。競争や効率化のためではなく、AI をパートナーにデジタルアートを共創する個人的キャンペーン「AI for ART」。第一弾は進化し続ける光のアート「生命の夜」。by ame_dev">
 <meta name="theme-color" content="#04040a">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='4.5' fill='%23ffe2a0'/><circle cx='16' cy='16' r='10' fill='none' stroke='%23ffe2a0' stroke-opacity='.35' stroke-width='1.5'/></svg>">
 <style>
@@ -85,6 +85,19 @@
   .enter:hover .arrow { transform: translateX(3px); }
   .enter:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
 
+  /* パートナー表記(共作した AI モデルのクレジット風の控えめな署名) */
+  .partner {
+    margin: 20px 0 0;
+    padding-top: 16px;
+    border-top: 1px solid var(--faint);
+    display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+  }
+  .partner-label {
+    font-size: 10px; letter-spacing: 0.28em; text-transform: uppercase;
+    color: var(--dim); flex: none;
+  }
+  .partner-names { font-size: 12.5px; letter-spacing: 0.04em; color: var(--dim); }
+
   footer {
     margin-top: 40px; color: var(--dim); font-size: 12px;
     letter-spacing: 0.06em;
@@ -95,6 +108,7 @@
     h1 { font-size: 35px; }
     .work { padding: 22px 20px 20px; }
     .work-title { font-size: 22px; }
+    .partner { padding-top: 14px; }
   }
 </style>
 </head>
@@ -103,8 +117,8 @@
   <header class="intro">
     <div class="brand">ame_dev</div>
     <h1>AI for ART</h1>
-    <p class="lead">「AI for ART」は、最高峰の AI を、競争や勝ち負け・利益のためではなく、ともにアートを作るために使う個人的なキャンペーンです。</p>
-    <p class="lead en">AI for ART is a personal campaign — to use the most advanced AI not for competition, winning, or profit, but to make art together.</p>
+    <p class="lead">国家や企業を揺るがす攻撃にも転用できてしまう高性能AIが、個人の手元にあるのが当たり前になった今。競争や効率化のためではなく、「アートのためのAI」を構想し、パートナーとしてデジタルアートを共創する個人的なキャンペーンです。</p>
+    <p class="lead en">The same high-performance AI that can be turned into attacks powerful enough to shake nations and corporations now sits, as a matter of course, in the hands of ordinary individuals. This is a personal campaign that puts it to a different end—not competition, not efficiency, but "AI for ART": a vision in which AI becomes a partner, and digital art is something we create together.</p>
   </header>
 
   <article class="work">
@@ -115,6 +129,7 @@
       <p class="en">Life lies sealed within the night. In this small garden, light—each point carrying fifteen genes—changes from one generation to the next, following a genetic algorithm. Where it finally arrives, whether one reads the accidental or the inevitable is left to the observer.</p>
     </blockquote>
     <a class="enter" href="night-of-life/">作品を見る <span class="arrow" aria-hidden="true">→</span></a>
+    <p class="partner"><span class="partner-label">Partner</span><span class="partner-names">Claude Fable 5, Opus 4.8</span></p>
   </article>
 
   <footer>by ame_dev</footer>

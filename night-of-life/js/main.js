@@ -34,7 +34,7 @@
     // 高精細スマホ(iPhone は devicePixelRatio = 3)では、上限 1.5 で描いた絵が
     // 画面いっぱいに拡大されて粗く見える。狭い画面では描画解像度の上限を上げて
     // くっきりさせる。デスクトップは負荷を抑えて 1.5 のまま
-    const dprCap = (typeof isSmallScreen !== 'undefined' && isSmallScreen) ? 2 : 1.5;
+    const dprCap = (typeof isSmallScreen !== 'undefined' && isSmallScreen) ? 2.5 : 1.5;
     const dpr = Math.min(window.devicePixelRatio || 1, dprCap);
     const vw = Math.max(1, window.innerWidth), vh = Math.max(1, window.innerHeight);
     // スマホなど狭い画面では少しズームアウトして、光の流れが見える範囲を広げる。

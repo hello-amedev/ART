@@ -32,13 +32,18 @@
   function resize() {
     const oldW = env.w, oldH = env.h;
     const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-    env.w = Math.max(640, window.innerWidth);
-    env.h = Math.max(360, window.innerHeight);
-    canvas.width = Math.round(env.w * dpr);
-    canvas.height = Math.round(env.h * dpr);
-    canvas.style.width = env.w + 'px';
-    canvas.style.height = env.h + 'px';
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const vw = Math.max(1, window.innerWidth), vh = Math.max(1, window.innerHeight);
+    // スマホなど狭い画面では少しズームアウトして、光の流れが見える範囲を広げる。
+    // 論理世界(env.w/env.h)を表示より広く取り、その分だけ等倍で縮小して描く(歪みなし)
+    const zoom = (typeof isSmallScreen !== 'undefined' && isSmallScreen) ? 0.72 : 1;
+    env.w = Math.round(vw / zoom);
+    env.h = Math.round(vh / zoom);
+    canvas.width = Math.round(vw * dpr);
+    canvas.height = Math.round(vh * dpr);
+    canvas.style.width = vw + 'px';
+    canvas.style.height = vh + 'px';
+    const s = zoom * dpr; // 論理座標 → 実ピクセル(x/y 同じスケールなので歪まない)
+    ctx.setTransform(s, 0, 0, s, 0, 0);
     field.resize(env.w, env.h);
     // 粒子を新しい画面サイズへ等比で再配置(放置すると旧領域に固まる)
     if (oldW > 0 && (oldW !== env.w || oldH !== env.h)) {

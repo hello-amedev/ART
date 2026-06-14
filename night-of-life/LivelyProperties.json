@@ -3,7 +3,7 @@
     "type": "slider",
     "text": "粒子の量",
     "value": 1800,
-    "min": 300,
+    "min": 1000,
     "max": 3000,
     "step": 100
   },

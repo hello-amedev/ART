@@ -71,6 +71,15 @@ const Genome = (() => {
   function crossover(a, b) {
     const child = {};
     for (const key of KEYS) {
+      // 色相(基調色からのずれ)だけは必ず両親の中間でブレンドする。
+      // 通常の 40/40/20 だと 8 割が親の色そのままになり、水色×桃色の交配が
+      // 「混色(紫)」にならずどちらかの色に倒れてしまう。色相だけ常に混ぜて
+      // 交配=混色を見せる(彩度・明度は混ぜず種族ごとの違いを残すので澄んだ色になる)
+      if (key === 'hueOffset') {
+        const t = Math.random();
+        child[key] = a[key] * (1 - t) + b[key] * t;
+        continue;
+      }
       const r = Math.random();
       if (r < 0.4) {
         child[key] = a[key];

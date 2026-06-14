@@ -4,9 +4,10 @@
 
 Light-art that keeps evolving through a genetic algorithm.
 
-> Life is closed within the night. In this small garden, light born of a genetic
-> algorithm changes across the generations. At where it arrives, whether you read
-> the accidental or the inevitable is left to the observer.
+> Life lies sealed within the night. In this small garden, light—each point
+> carrying fifteen genes—changes from one generation to the next, following a
+> genetic algorithm. Where it finally arrives, whether one reads the accidental
+> or the inevitable is left to the observer.
 
 Across the screen, many "tribes" of light drift quietly. They pass through
 generations again and again — colors and movements gradually shifting — and now

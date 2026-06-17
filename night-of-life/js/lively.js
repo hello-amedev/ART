@@ -24,6 +24,7 @@ const Settings = {
   showHud: true,     // 右下のシステム表示(世代・時刻・種族チップ)
   colorSync: true,    // 近傍の光り方(位相)の同期を色のゆらぎに反映(3D プロトの検証用)
   cameraMotion: false,// カメラのゆっくりした動き。既定は固定(流れ自体で動きを出す)
+  cameraZoom: 1.0,    // 1.0 = 基準距離。> 1 で引き(全体俯瞰)、< 1 で寄り(没入)
 };
 
 // 実行時エラーの収集(開発用 ?debug の診断表示で見せる)。Lively 内では DevTools が見られないため、
@@ -73,6 +74,10 @@ function livelyPropertyListener(name, val) {
       break;
     case 'cameraMotion':
       Settings.cameraMotion = !!val;
+      break;
+    case 'cameraZoom':
+      Settings.cameraZoom = Math.max(0.5, Math.min(3.0, (val | 0) / 100));
+      if (window.App) App.applyCameraZoom();
       break;
     case 'bottomMargin':
       // Lively の壁紙はタスクバーの裏まで描画されるため、

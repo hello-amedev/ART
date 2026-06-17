@@ -64,7 +64,8 @@
     env.w = base * 1.1; env.h = base * 1.1; env.d = base * 1.1;
     env.worldR = base * 0.66;            // この半径を越えた粒子は空間内へ再投入
     env.coreR = base * 0.06;             // 親なし誕生時の散らばり半径(互換用)
-    env.camDist = base * 0.72;           // カメラを引いて渦・流れの全体性を俯瞰する
+    env.baseCamDist = base * 0.72;       // 基準距離。Settings.cameraZoom で倍率を掛ける
+    env.camDist = env.baseCamDist * Settings.cameraZoom;
     env.focal = Math.min(vw, vh) * 0.78; // 広めの画角で没入感を出す
     field.resize(env.w, env.h, env.d);
     paintFull();
@@ -469,6 +470,10 @@
     applyParticleCount() {
       const per = evolution.perSpeciesCount();
       for (const sp of evolution.species) sp.setCount(per, env);
+    },
+    applyCameraZoom() {
+      // スライダー変更を即座に反映する(基準距離は resize 時に保存済み)
+      env.camDist = env.baseCamDist * Settings.cameraZoom;
     },
     resetEvolution() {
       evolution.reset(env);

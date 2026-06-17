@@ -51,6 +51,14 @@
     "text": "カメラの動き",
     "value": false
   },
+  "cameraZoom": {
+    "type": "slider",
+    "text": "カメラの距離(100=既定 / 大きいほど引く)",
+    "value": 100,
+    "min": 70,
+    "max": 200,
+    "step": 5
+  },
   "bottomMargin": {
     "type": "slider",
     "text": "下端の余白(計器がタスクバーに隠れる時に調整)",

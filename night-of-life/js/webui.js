@@ -48,6 +48,8 @@
   const CONTROLS = [
     { name: 'particleCount',    label: '粒子の量',              type: 'slider', min: 4000, max: 7000, step: 100,
       get: () => Settings.particleCount },
+    { name: 'cameraZoom',       label: 'カメラの距離(100=既定)', type: 'slider', min: 70,  max: 200,  step: 5,
+      get: () => Math.round(Settings.cameraZoom * 100) },
     { name: 'evolutionMinutes', label: '世代交代の間隔(分)',    type: 'slider', min: 1,   max: 15,   step: 1,
       get: () => Settings.evolutionMinutes },
     { name: 'brightness',       label: '明るさ(%)',            type: 'slider', min: 40,  max: 160,  step: 5,

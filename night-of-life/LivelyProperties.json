@@ -2,9 +2,9 @@
   "particleCount": {
     "type": "slider",
     "text": "粒子の量",
-    "value": 1800,
+    "value": 4500,
     "min": 1000,
-    "max": 3000,
+    "max": 6000,
     "step": 100
   },
   "evolutionMinutes": {
@@ -40,6 +40,16 @@
     "type": "checkbox",
     "text": "システム表示(世代・種族)",
     "value": true
+  },
+  "colorSync": {
+    "type": "checkbox",
+    "text": "色の同期(3D実験)",
+    "value": true
+  },
+  "cameraMotion": {
+    "type": "checkbox",
+    "text": "カメラの動き",
+    "value": false
   },
   "bottomMargin": {
     "type": "slider",

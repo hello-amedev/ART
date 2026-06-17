@@ -16,12 +16,14 @@ const isSmallScreen =
   /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
 
 const Settings = {
-  particleCount: isSmallScreen ? 1000 : 1800,
+  particleCount: isSmallScreen ? 2200 : 4500,
   evolutionMinutes: 3,
   brightness: 1.0,   // 1.0 = 100%
   trailLength: 0.5,  // 0..1(軌跡の長さ)
   ecoMode: false,    // true で 30fps に間引き
   showHud: true,     // 右下のシステム表示(世代・時刻・種族チップ)
+  colorSync: true,    // 近傍の光り方(位相)の同期を色のゆらぎに反映(3D プロトの検証用)
+  cameraMotion: false,// カメラのゆっくりした動き。既定は固定(流れ自体で動きを出す)
 };
 
 // 実行時エラーの収集(開発用 ?debug の診断表示で見せる)。Lively 内では DevTools が見られないため、
@@ -42,6 +44,7 @@ window.addEventListener('unhandledrejection', (e) => {
 const Flags = {
   demo: /[?&]demo/.test(location.search),
   debug: /[?&]debug/.test(location.search),
+  event: /[?&]event/.test(location.search), // 渦イベントを常時オン(通り抜けの確認用)
 };
 
 function livelyPropertyListener(name, val) {
@@ -64,6 +67,12 @@ function livelyPropertyListener(name, val) {
       break;
     case 'showHud':
       Settings.showHud = !!val;
+      break;
+    case 'colorSync':
+      Settings.colorSync = !!val;
+      break;
+    case 'cameraMotion':
+      Settings.cameraMotion = !!val;
       break;
     case 'bottomMargin':
       // Lively の壁紙はタスクバーの裏まで描画されるため、

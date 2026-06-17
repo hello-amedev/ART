@@ -46,7 +46,7 @@
   // type=slider は数値、checkbox は真偽、button は押下のみ。
   // Lively 専用(下端の余白)・開発用(診断)・実時間方針で出さない(早回し)は含めない。
   const CONTROLS = [
-    { name: 'particleCount',    label: '粒子の量',              type: 'slider', min: 1000, max: 3000, step: 100,
+    { name: 'particleCount',    label: '粒子の量',              type: 'slider', min: 1000, max: 6000, step: 100,
       get: () => Settings.particleCount },
     { name: 'evolutionMinutes', label: '世代交代の間隔(分)',    type: 'slider', min: 1,   max: 15,   step: 1,
       get: () => Settings.evolutionMinutes },
@@ -58,6 +58,10 @@
       get: () => Settings.ecoMode },
     { name: 'showHud',          label: 'システム表示(世代・種族)', type: 'checkbox',
       get: () => Settings.showHud },
+    { name: 'colorSync',        label: '色の同期(3D実験)',     type: 'checkbox',
+      get: () => Settings.colorSync !== false },
+    { name: 'cameraMotion',     label: 'カメラの動き',          type: 'checkbox',
+      get: () => Settings.cameraMotion !== false },
     { name: 'forceNova',        label: '突然変異を起こす',       type: 'button' },
     { name: 'resetEvolution',   label: '進化をリセット',         type: 'button', confirm: '進化を第 1 世代からやり直します。よろしいですか?' },
   ];

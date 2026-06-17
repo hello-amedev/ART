@@ -1,15 +1,18 @@
 'use strict';
 
 /*
- * メインループと描画。
+ * メインループと描画(3D 版)。
  *
- * 描画は「全消去」ではなく、背景色を薄く重ねて古い光を
- * ゆっくり沈めていく方式。これが軌跡(残像)になる。
- * 粒子は加算合成(lighter)で重なるほど輝く。
+ * 粒子は中心原点の 3D 空間を流れ、ゆっくりオービットするカメラから
+ * 透視投影で画面に落とす。光は前後対称の短い針として描き、加算合成
+ * (lighter)で重なるほど輝く。背景を薄く重ねて古い光を沈めることで
+ * 軌跡(残像)になる。加算合成は順序に依らないので、奥行きのソートはしない
+ * (遮蔽もしない=光は重なって明るくなるのが正しい)。
  *
- * 基調色相は時刻とともに 1 日かけて色相環をめぐる。
- * 種族の色は「基調色相 + 遺伝子のずれ」で決まるので、
- * どの時間帯でも画面全体の調和が保たれる。
+ * 奥行きは「z で針の長さ・太さ・明るさ・彩度を一様にスケール」+「奥ほど
+ * 藍へ霞む大気遠近」で語る(新しい色は足さない)。基調色相は時刻とともに
+ * 1 日かけて色相環をめぐる。位相同期は色相のごく小さなゆらぎとしてだけ
+ * 重ねる(明るさ・位置には触れない)。
  */
 
 (() => {
@@ -23,43 +26,44 @@
   const hudLogEl = hudEl.querySelector('.log');
 
   const field = new FlowField();
-  const grid = new SpatialGrid(48);
+  const grid = new SpatialGrid(90);
   const evolution = new Evolution();
 
   // 各モジュールに渡す共有環境
-  const env = { w: 0, h: 0, hour: 12, time: 0, field, grid };
+  const env = {
+    vw: 0, vh: 0,            // 表示(CSS px)
+    w: 0, h: 0, d: 0,        // 世界の箱(中心原点)
+    worldR: 0, coreR: 0,     // 外縁半径 / 中心湧き半径
+    camDist: 0, focal: 0,    // カメラ距離 / 焦点距離(画角)
+    cam: { az: 0.6, el: 0.34 },
+    hour: 12, time: 0,
+    field, grid,
+    _tmp: [0, 0, 0, 0, 0, 0], // flowAt の出力バッファ(0..2=流れ / 3..5=最寄りの渦輪点)
+    _syncParity: 0,          // 位相同期を 1 フレームに半数ずつ回すための偶奇
+  };
 
   function resize() {
-    const oldW = env.w, oldH = env.h;
-    // 高精細スマホ(iPhone は devicePixelRatio = 3)では、上限 1.5 で描いた絵が
-    // 画面いっぱいに拡大されて粗く見える。狭い画面では描画解像度の上限を上げて
-    // くっきりさせる。デスクトップは負荷を抑えて 1.5 のまま
     const dprCap = (typeof isSmallScreen !== 'undefined' && isSmallScreen) ? 2.5 : 1.5;
     const dpr = Math.min(window.devicePixelRatio || 1, dprCap);
     const vw = Math.max(1, window.innerWidth), vh = Math.max(1, window.innerHeight);
-    // スマホなど狭い画面では少しズームアウトして、光の流れが見える範囲を広げる。
-    // 論理世界(env.w/env.h)を表示より広く取り、その分だけ等倍で縮小して描く(歪みなし)
-    const zoom = (typeof isSmallScreen !== 'undefined' && isSmallScreen) ? 0.72 : 1;
-    env.w = Math.round(vw / zoom);
-    env.h = Math.round(vh / zoom);
     canvas.width = Math.round(vw * dpr);
     canvas.height = Math.round(vh * dpr);
     canvas.style.width = vw + 'px';
     canvas.style.height = vh + 'px';
-    const s = zoom * dpr; // 論理座標 → 実ピクセル(x/y 同じスケールなので歪まない)
-    ctx.setTransform(s, 0, 0, s, 0, 0);
-    field.resize(env.w, env.h);
-    // 粒子を新しい画面サイズへ等比で再配置(放置すると旧領域に固まる)
-    if (oldW > 0 && (oldW !== env.w || oldH !== env.h)) {
-      const sx = env.w / oldW, sy = env.h / oldH;
-      for (const sp of evolution.species) sp.rescale(sx, sy);
-    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // 1 論理 px = 1 CSS px(奥行きは投影側で扱う)
+    env.vw = vw; env.vh = vh;
+    const base = Math.hypot(vw, vh);
+    env.w = base * 1.1; env.h = base * 1.1; env.d = base * 1.1;
+    env.worldR = base * 0.66;            // この半径を越えた粒子は空間内へ再投入
+    env.coreR = base * 0.06;             // 親なし誕生時の散らばり半径(互換用)
+    env.camDist = base * 0.72;           // カメラを引いて渦・流れの全体性を俯瞰する
+    env.focal = Math.min(vw, vh) * 0.78; // 広めの画角で没入感を出す
+    field.resize(env.w, env.h, env.d);
     paintFull();
   }
 
   // 時刻 → 基調色相。深夜の藍 → 明け方の紫紅 → 朝の金色 →
   // 昼の空色 → 夕の茜 → 宵の紫 → 夜の藍、と 1 日でめぐる
-  // 中間色(緑・黄)の帯は美しく見せにくいので、キーを細かく置いて素早く通過させる
   const HUE_KEYS = [
     [0, 252], [4.5, 268], [6.5, 330], [8, 38], [11, 185], [15, 200],
     [17.5, 45], [19.5, 8], [21, 305], [22.5, 252], [24, 252],
@@ -86,21 +90,16 @@
     return 0.5 - 0.5 * Math.cos(((hour - 4) / 24) * TAU);
   }
 
-  // 生きてきた時間(齢)をストップウォッチ式 m:ss で。単位漢字を使わず一貫表記。
-  // 無常さ — 誰が古株で誰が新参かが、増え続ける一つの数で分かる
   function ageText(sec) {
     const m = (sec / 60) | 0;
     const s = (sec % 60) | 0;
     return `${m}:${String(s).padStart(2, '0')}`;
   }
 
-  // 0..1 系の値を「先頭の 0 を省いた素の数値」に(.67 / 1.23)。
-  // デバッグ表示と同じ「機械的な数値の羅列」の質感にするための整形
   function dec2(v) {
     return v.toFixed(2).replace(/^0\./, '.');
   }
 
-  // h: 0..360, s/l: 0..1 → [r, g, b](0..255 整数)
   function hslToRgb(h, s, l) {
     const c = (1 - Math.abs(2 * l - 1)) * s;
     const hp = h / 60;
@@ -120,7 +119,6 @@
     ];
   }
 
-  // 背景色は RGB 値でも持つ(澱スナップでピクセル比較に使うため)
   function bgRgb(hour) {
     const dl = daylightFactor(hour);
     return hslToRgb(baseHue(hour), 0.32, (3 + dl * 2.2) / 100);
@@ -134,27 +132,22 @@
   function paintFull() {
     ctx.globalCompositeOperation = 'source-over';
     ctx.fillStyle = bgFill(env.hour, 1);
-    ctx.fillRect(0, 0, env.w, env.h);
+    ctx.fillRect(0, 0, env.vw, env.vh);
   }
 
-  // 軌跡の長さ → 背景を重ねる濃さ(薄いほど軌跡が長く残る)。
-  // 0.012 を下回ると古い光が「澱」として堆積し背景が灰色に浮くので下限を保つ。
-  // 短めの尾 = 筆致が画面に置かれては消える、絵画的な質感
+  // 軌跡の長さ → 背景を重ねる濃さ(薄いほど軌跡が長く残る)
   function fadeAlpha() {
     return 0.03 + 0.1 * Math.pow(1 - Settings.trailLength, 2);
   }
 
-  // 半透明合成の 8bit 丸めで、消えたはずの軌跡が「澱」として薄く残り続ける。
-  // 対策: 毎回 1 タイルずつ、背景との差がごく小さいピクセルだけを背景値へ
-  // スナップする。画面全体を数秒で一巡し、目に見える変化は一切ない
-  // (差 ±2 程度の「ほぼ消えた光」しか触らないため)。
-  // 以前の「定期的に強いフェードを入れる」方式は明滅が見えて連続性を壊すため廃止
-  const SWEEP_DIV = 8;       // 8x8 = 64 タイル
+  // 半透明合成の 8bit 丸めで残る「澱」を、背景との差がごく小さいピクセルだけ
+  // 背景値へスナップして掃除する(投影後の 2D 画面に効くので 3D 化後も有効)
+  const SWEEP_DIV = 8;
   let sweepTile = 0;
   let sweepSkip = 0;
 
   function sweepResidue(hour) {
-    sweepSkip = (sweepSkip + 1) % 4; // 4 フレームに 1 タイル(負荷分散)
+    sweepSkip = (sweepSkip + 1) % 4;
     if (sweepSkip !== 0) return;
     const W = canvas.width, H = canvas.height;
     const tw = Math.ceil(W / SWEEP_DIV), th = Math.ceil(H / SWEEP_DIV);
@@ -177,12 +170,21 @@
     ctx.putImageData(img, tx, ty);
   }
 
+  // カメラ: 構造中心を見て、ごくゆっくりオービット(方位)+ 仰角のゆらぎ。
+  // Settings.cameraMotion で止められる(酔い・好みの確認用)
+  function updateCamera(dt) {
+    const c = env.cam;
+    const on = (typeof Settings !== 'undefined') ? Settings.cameraMotion !== false : true;
+    if (!on) return;
+    c.az += dt * 0.012;                              // 1 周およそ 8.7 分
+    c.el = 0.18 + 0.13 * Math.sin(env.time * 0.017); // 仰角がゆっくり上下
+  }
+
   function draw() {
     const hour = env.hour;
-
     ctx.globalCompositeOperation = 'source-over';
     ctx.fillStyle = bgFill(hour, fadeAlpha());
-    ctx.fillRect(0, 0, env.w, env.h);
+    ctx.fillRect(0, 0, env.vw, env.vh);
 
     ctx.globalCompositeOperation = 'lighter';
     ctx.lineCap = 'butt'; // 丸い線端は「頭」に見えて生物感が出る。平らに切って硬質に
@@ -190,30 +192,68 @@
     const hue0 = baseHue(hour);
     const satMod = 0.92 + daylightFactor(hour) * 0.08;
     const bright = Settings.brightness;
+    const colorSync = Settings.colorSync !== false;
+
+    const cam = env.cam;
+    const caz = Math.cos(cam.az), saz = Math.sin(cam.az);
+    const cel = Math.cos(cam.el), sel = Math.sin(cam.el);
+    const SX = env.vw / 2, SY = env.vh / 2, FOC = env.focal, CD = env.camDist;
+    const far = CD + env.worldR, span = (far - 1) || 1;
+    const refSc = FOC / CD;
+    const O = env._O || (env._O = {});
+    const A = env._A || (env._A = {});
+    const B = env._B || (env._B = {});
+
+    // ワールド点 → 画面。方位回転(y 軸)→ 仰角(x 軸)→ 透視投影
+    function pr(x, y, z, o) {
+      const x1 = x * caz + z * saz;
+      const z1 = -x * saz + z * caz;
+      const y2 = y * cel - z1 * sel;
+      const z2 = y * sel + z1 * cel;
+      const vz = z2 + CD;
+      o.vz = vz;
+      if (vz < 1) return;
+      const sc = FOC / vz;
+      o.sx = SX + x1 * sc;
+      o.sy = SY - y2 * sc;
+      o.sc = sc;
+    }
 
     for (const sp of evolution.species) {
       if (sp.opacity <= 0.005) continue;
       const g = sp.genome;
-      // 突然変異で生まれた一族も特別な発光はさせない。変異のインパクトは「親と違う冴えた色」
-      // そのもので見せる(強く光らせると色が飛んで、かえって変異が分からなくなるため)
+      // 突然変異の一族も特別な発光はさせない。変異は「親と違う冴えた色」そのもので見せる
       const alphaBase = 0.15 * sp.opacity * (0.35 + 0.65 * sp.activity) * bright;
-      const coreAlpha = alphaBase.toFixed(3);
-      const sat = Math.min(96, g.satBase * 100 * satMod) | 0;
-      const lum = (Math.min(78, g.lumBase * 100 + 6)) | 0;
+      const sat0 = Math.min(96, g.satBase * 100 * satMod);
+      const lum0 = Math.min(78, g.lumBase * 100 + 6);
+      const lineBase = g.glowSize * 0.55;
 
-      // 粒子は進行方向を向いた「前後対称の短い光の針」として描く。
-      // 頭も尾もないシルエット = 無機的な筆致。彗星型は生物っぽく見える
       for (const p of sp.particles) {
-        const hue = ((hue0 + g.hueOffset + p.hueJ * g.hueSpread + 720) % 360) | 0;
+        // 前後対称の針。両端を個別に投影し、その中点を粒子の画面位置とする
+        // (中心の投影を省いて 1 粒子あたりの投影を 2 回に抑える)
         const half = g.strokeLen * p.sizeJ * 0.5;
-        const ca = Math.cos(p.a) * half;
-        const sa = Math.sin(p.a) * half;
-        ctx.strokeStyle = `hsla(${hue},${sat}%,${lum}%,${coreAlpha})`;
-        // 細く。「点」でなく「線」に見える太さ
-        ctx.lineWidth = g.glowSize * p.sizeJ * 0.55;
+        pr(p.x - p.vx * half, p.y - p.vy * half, p.z - p.vz * half, A);
+        pr(p.x + p.vx * half, p.y + p.vy * half, p.z + p.vz * half, B);
+        if (A.vz < 1 || B.vz < 1) continue; // カメラ後方
+        const sxc = (A.sx + B.sx) * 0.5, syc = (A.sy + B.sy) * 0.5;
+        if (sxc < -120 || sxc > env.vw + 120 || syc < -120 || syc > env.vh + 120) continue;
+        let dn = ((A.vz + B.vz) * 0.5 - 1) / span; if (dn < 0) dn = 0; else if (dn > 1) dn = 1; // 0=手前 1=奥
+        const scc = (A.sc + B.sc) * 0.5;
+
+        let hue = hue0 + g.hueOffset + p.hueJ * g.hueSpread;
+        if (colorSync) hue += Math.sin(p.phase) * 8; // 同期した近傍がほのかに色を揃える(±8°)
+        // 奥ほど藍(250)へ霞む大気遠近(最短弧でブレンド。新しい色は足さない)
+        let diff = 250 - hue; diff = ((diff % 360) + 540) % 360 - 180;
+        hue = ((hue + diff * dn * 0.4) % 360 + 360) % 360;
+        const sat = (sat0 * (1 - dn * 0.35)) | 0;
+        let lum = lum0 * (1 - dn * 0.42); if (lum < 24) lum = 24;
+        const alpha = alphaBase * (1 - dn * 0.6);
+
+        ctx.strokeStyle = `hsla(${hue | 0},${sat}%,${lum | 0}%,${alpha.toFixed(3)})`;
+        ctx.lineWidth = Math.max(0.4, lineBase * p.sizeJ * (scc / refSc));
         ctx.beginPath();
-        ctx.moveTo(p.x - ca, p.y - sa);
-        ctx.lineTo(p.x + ca, p.y + sa);
+        ctx.moveTo(A.sx, A.sy);
+        ctx.lineTo(B.sx, B.sy);
         ctx.stroke();
       }
     }
@@ -223,10 +263,10 @@
 
   function rebuildGrid() {
     grid.clear();
-    for (const sp of evolution.species) {
-      if (!sp.usesFlocking) continue; // 群れない種族は登録不要
+    // 近傍は「色の同期」のためだけに使う。同期を切っているときは構築もしない
+    if (Settings.colorSync === false) return;
+    for (const sp of evolution.species)
       for (const p of sp.particles) grid.insert(p, sp.id);
-    }
   }
 
   let last = performance.now();
@@ -241,12 +281,14 @@
     let dt = (now - last) / 1000;
     last = now;
     if (dt <= 0) return;
-    if (dt > 0.05) dt = 0.05; // 復帰直後などの巨大なステップを抑制
+    if (dt > 0.05) dt = 0.05;
 
     env.time += dt;
     env.hour = evolution.hour(now);
+    env._syncParity ^= 1;
 
     field.update(dt);
+    updateCamera(dt);
     evolution.tick(dt, env);
     rebuildGrid();
     for (const sp of evolution.species) sp.update(dt, env);
@@ -257,11 +299,8 @@
     else if (!debugEl.hidden) debugEl.hidden = true;
   }
 
-  // 右下の常設システム表示(観測パネル)。
-  // 種族ごとに 1 行: 色チップ / 世代と系譜(#42‹38×35 = 38 世代と 35 世代の子) /
-  // 活動度バー / 活動ピーク時刻 / 状態(IN=誕生中, OUT=退場中)。
-  // チップとバーの明るさは「目覚め度」— 夜行性の種族の行は夜に灯る
-  let hudTimer = 1; // 起動 1 秒後に初回更新
+  // 右下の常設システム表示(観測パネル)。種族ごとに 1 行
+  let hudTimer = 1;
 
   function updateHud(dt) {
     if (!Settings.showHud) {
@@ -282,7 +321,6 @@
     const sps = evolution.species;
     const hue0 = baseHue(h);
 
-    // 行は種族 id で対応付けて使い回す(バー幅の transition を活かす)
     const existing = new Map();
     for (const el of Array.from(hudRowsEl.children)) existing.set(el.dataset.sid, el);
     const seen = new Set();
@@ -296,9 +334,6 @@
           row = document.createElement('div');
           row.className = 'row';
           row.dataset.sid = sid;
-          // 色チップ(identity)/ 世代 / 掛け合わせ親 / 活動 / 適応 /
-          // 速さ / 群れ / 筆の長さ / 齢 / 状態。すべて素の数値・等幅整列
-          // (デバッグ表示と同じ機械的な羅列。spd/flk/len は画面で見える違いと対応)
           row.innerHTML =
             '<span class="chip"></span>' +
             '<span class="gen"></span>' +
@@ -311,30 +346,26 @@
             '<span class="age"></span>' +
             '<span class="state"></span>';
         }
-        hudRowsEl.appendChild(row); // 配列順に並べ直し(既存ノードは移動になる)
+        hudRowsEl.appendChild(row);
 
         const g = sp.genome;
         const hue = (((hue0 + g.hueOffset) % 360) + 360) % 360;
-        // チップは常に純粋な遺伝子色(活動や誕生/退場で薄めない = どの色の種族か常に分かる)
         const chipCol = `hsl(${hue | 0}, ${(g.satBase * 100) | 0}%, ${(g.lumBase * 100 + 8) | 0}%)`;
-        row.children[0].style.backgroundColor = chipCol;             // chip(identity・純色)
-        // 相続グロー: 誕生中(in)は行が自分の色(=親から受け継いだ色)でうっすら灯り、
-        // 馴染むにつれ消える。新しい血が入った瞬間が台帳でも分かる
+        row.children[0].style.backgroundColor = chipCol;
         row.style.backgroundColor = sp.state === 'in'
           ? `hsla(${hue | 0}, ${(g.satBase * 100) | 0}%, ${(g.lumBase * 100 + 8) | 0}%, ${((1 - sp.opacity) * 0.22).toFixed(3)})`
           : '';
-        row.children[1].textContent = sp.generation;                 // 世代(今の種族)
-        row.children[2].textContent = sp.parentGens                  // 掛け合わせ親(系譜)
+        row.children[1].textContent = sp.generation;
+        row.children[2].textContent = sp.parentGens
           ? `${sp.parentGens[0]}×${sp.parentGens[1]}`
           : '';
-        row.children[3].textContent = dec2(sp.activity);             // 活動(いまの目覚め度)
-        row.children[4].textContent = dec2(sp.vigor);                // 家系の勢い(子を残せているか)
-        row.children[5].textContent = dec2((g.speed - 0.3) / 1.3);   // 速さ(0..1 正規化)
-        row.children[6].textContent = dec2((g.cohesion + g.alignment) / 2); // 群れ(0..1)
-        row.children[7].textContent = dec2((g.strokeLen - 7) / 15);  // 筆の長さ(0..1)
-        row.children[8].textContent = ageText(sp.ageSec);            // 齢(m:ss)
+        row.children[3].textContent = dec2(sp.activity);
+        row.children[4].textContent = dec2(sp.vigor);
+        row.children[5].textContent = dec2((g.speed - 0.3) / 1.3);
+        row.children[6].textContent = dec2((g.cohesion + g.alignment) / 2);
+        row.children[7].textContent = dec2((g.strokeLen - 7) / 15);
+        row.children[8].textContent = ageText(sp.ageSec);
 
-        // state: 退場(↓out)を最優先、次に突然変異の印(✦ マークのみ)、誕生(in)
         const stateEl = row.children[9];
         if (sp.state === 'out') {
           stateEl.textContent = '↓out';
@@ -347,7 +378,6 @@
           stateEl.classList.remove('nova');
         }
       } catch (e) {
-        // 1 行のエラーで観測パネル全体が止まらないように。内容は ?debug で見える
         ErrorLog.push('hud row: ' + e.message);
         if (ErrorLog.length > 5) ErrorLog.shift();
       }
@@ -357,9 +387,6 @@
       if (!seen.has(sid)) el.remove();
     }
 
-    // 事象ログ: 直近の誕生(↑)/退場(↓)/突然変異(✦)/参入(+)を新しい順に。
-    // 高さを動かさないため常に 3 行ぶん描く(無いぶんは空行で予約)。
-    // 経過秒(+Ns)が刻々と増え、止まっていても「観察者の手帳」が静かに動く
     const show = evolution.eventLog.slice(-3).reverse();
     let logHtml = '';
     for (let i = 0; i < 3; i++) {
@@ -387,8 +414,6 @@
         ` peak ${sp.genome.dayPhase.toFixed(1)}h w ${sp.genome.phaseWidth.toFixed(1)}`
       );
     }
-    // 環境の不具合調査用の診断情報(開発用。?debug 指定時のみ。
-    // Lively 内では DevTools が見られないため画面に出せるようにしてある)
     if (Flags.debug) {
       let storageState = 'NG';
       let savedCount = '-';
@@ -415,6 +440,7 @@
         `particleCount ${Settings.particleCount} | perSpecies ${evolution.perSpeciesCount()}` +
         ` | evoMin ${Settings.evolutionMinutes} | hud ${Settings.showHud}`
       );
+      lines.push(`colorSync ${Settings.colorSync !== false} | cameraMotion ${Settings.cameraMotion !== false}`);
       lines.push(ErrorLog.length ? 'errors:' : 'errors: none');
       for (const er of ErrorLog) lines.push(' ' + er);
     }
@@ -431,15 +457,13 @@
       evolution.reset(env);
       paintFull();
     },
-    // 動作確認用: いますぐ世代交代を 1 回起こし、大きな突然変異(親と違う色の一族)を強制する。
-    // 大きな突然変異は確率 15% でしか起きないため、確認の手段として用意
+    // 動作確認用: いますぐ世代交代を 1 回起こし、大きな突然変異を強制する
     forceNova() {
       evolution.genTimer = 0;
       evolution.step(env, true);
       return 'forced a big-mutation birth';
     },
-    // デバッグ用: seconds 秒ぶんを一気にシミュレートして描く。
-    // rAF が止まる環境(オフスクリーン確認など)でも絵と進化を検証できる
+    // デバッグ用: seconds 秒ぶんを一気にシミュレートして描く(rAF が止まる環境でも検証できる)
     simulate(seconds) {
       const step = 1 / 60;
       const n = Math.round(seconds / step);
@@ -448,7 +472,9 @@
         env.time += step;
         evolution.simOffsetMs += step * 1000;
         env.hour = evolution.hour(performance.now());
+        env._syncParity ^= 1;
         field.update(step);
+        updateCamera(step);
         evolution.tick(step, env);
         rebuildGrid();
         for (const sp of evolution.species) sp.update(step, env);

@@ -16,7 +16,7 @@ const isSmallScreen =
   /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
 
 const Settings = {
-  particleCount: isSmallScreen ? 2200 : 4500,
+  particleCount: isSmallScreen ? 4000 : 5500,
   evolutionMinutes: 3,
   brightness: 1.0,   // 1.0 = 100%
   trailLength: 0.5,  // 0..1(軌跡の長さ)

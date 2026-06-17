@@ -18,7 +18,13 @@
 (() => {
   const TAU = Math.PI * 2;
   const canvas = document.getElementById('canvas');
-  const ctx = canvas.getContext('2d');
+  // ?gl=1 で WebGL2 レンダラーを試す。コンテキスト種別は排他なので、
+  // 取得に成功した時だけ 2D コンテキストの取得を抑止する(失敗時は従来の Canvas 2D で動く)
+  const useGL = /[?&]gl=1/.test(location.search);
+  const glRenderer = (useGL && typeof tryCreateRenderGL === 'function')
+    ? tryCreateRenderGL(canvas)
+    : null;
+  const ctx = glRenderer ? null : canvas.getContext('2d');
   const debugEl = document.getElementById('debug');
   const hudEl = document.getElementById('hud');
   const hudMetaEl = hudEl.querySelector('.meta');
@@ -50,7 +56,9 @@
     canvas.height = Math.round(vh * dpr);
     canvas.style.width = vw + 'px';
     canvas.style.height = vh + 'px';
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // 1 論理 px = 1 CSS px(奥行きは投影側で扱う)
+    // 2D 側: 論理 px = CSS px に揃える / GL 側: viewport を物理ピクセルに合わせる
+    if (ctx) ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (glRenderer) glRenderer.resize(canvas.width, canvas.height);
     env.vw = vw; env.vh = vh;
     const base = Math.hypot(vw, vh);
     env.w = base * 1.1; env.h = base * 1.1; env.d = base * 1.1;
@@ -130,6 +138,7 @@
   }
 
   function paintFull() {
+    if (glRenderer) { glRenderer.paintFull(env.hour); return; }
     ctx.globalCompositeOperation = 'source-over';
     ctx.fillStyle = bgFill(env.hour, 1);
     ctx.fillRect(0, 0, env.vw, env.vh);
@@ -147,6 +156,8 @@
   let sweepSkip = 0;
 
   function sweepResidue(hour) {
+    // WebGL 側はそもそも 2D 半透明合成の 8bit 丸めを経由しないので澱が出ない
+    if (glRenderer) return;
     sweepSkip = (sweepSkip + 1) % 4;
     if (sweepSkip !== 0) return;
     const W = canvas.width, H = canvas.height;
@@ -181,6 +192,11 @@
   }
 
   function draw() {
+    if (glRenderer) {
+      // WebGL2 経路: 背景フェード + 粒子加算合成を 1 ステップで行う
+      glRenderer.draw(env, evolution, Settings);
+      return;
+    }
     const hour = env.hour;
     ctx.globalCompositeOperation = 'source-over';
     ctx.fillStyle = bgFill(hour, fadeAlpha());
@@ -250,7 +266,8 @@
         const alpha = alphaBase * (1 - dn * 0.6);
 
         ctx.strokeStyle = `hsla(${hue | 0},${sat}%,${lum | 0}%,${alpha.toFixed(3)})`;
-        ctx.lineWidth = Math.max(0.4, lineBase * p.sizeJ * (scc / refSc));
+        // 1px 未満はピクセル境界で AA が効かずジャギーが出るため最小 1.0px に保つ
+        ctx.lineWidth = Math.max(1.0, lineBase * p.sizeJ * (scc / refSc));
         ctx.beginPath();
         ctx.moveTo(A.sx, A.sy);
         ctx.lineTo(B.sx, B.sy);

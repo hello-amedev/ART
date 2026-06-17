@@ -46,7 +46,7 @@
   // type=slider は数値、checkbox は真偽、button は押下のみ。
   // Lively 専用(下端の余白)・開発用(診断)・実時間方針で出さない(早回し)は含めない。
   const CONTROLS = [
-    { name: 'particleCount',    label: '粒子の量',              type: 'slider', min: 1000, max: 6000, step: 100,
+    { name: 'particleCount',    label: '粒子の量',              type: 'slider', min: 4000, max: 7000, step: 100,
       get: () => Settings.particleCount },
     { name: 'evolutionMinutes', label: '世代交代の間隔(分)',    type: 'slider', min: 1,   max: 15,   step: 1,
       get: () => Settings.evolutionMinutes },

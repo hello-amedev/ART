@@ -130,6 +130,7 @@ class Species {
       hueJ: Genome.gauss(),
       sizeJ: 0.7 + Math.random() * 0.6,
       spdJ: 0.8 + Math.random() * 0.4,
+      exitOffset: Math.random(),  // 0..1。種族退場時に粒子ごとに消えるタイミングをずらすための個別の番号
       _sid: 0,
     };
     const fv = env._tmp;
@@ -170,11 +171,10 @@ class Species {
       if (this.opacity < 0) this.opacity = 0;
     }
 
-    const targetAct = this.state === 'out'
-      ? 0.1
-      : 0.3 + 0.7 * Math.pow(Math.min(1, Genome.fitness(g, env.hour)), 0.8);
-    const followRate = this.state === 'out' ? 0.08 : 0.5;
-    this.activity += (targetAct - this.activity) * Math.min(1, dt * followRate);
+    // 退場中も活動度は時刻適合度で決める(動きを止めずに粒子ごとの α 倍率でウィンクアウトする)。
+    // 「ぴたっと止まって消える」現象を避け、流れに乗ったまま静かに消えていく振る舞いにする
+    const targetAct = 0.3 + 0.7 * Math.pow(Math.min(1, Genome.fitness(g, env.hour)), 0.8);
+    this.activity += (targetAct - this.activity) * Math.min(1, dt * 0.5);
 
     const speed = 38 * g.speed * (0.45 + 0.55 * this.activity);       // px/s 相当
     const turnBase = Math.min(1, g.agility * 80 * dt * (0.6 + 0.4 * this.activity)); // 基準の旋回率

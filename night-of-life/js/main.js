@@ -239,8 +239,12 @@
     for (const sp of evolution.species) {
       if (sp.opacity <= 0.005) continue;
       const g = sp.genome;
-      // 突然変異の一族も特別な発光はさせない。変異は「親と違う冴えた色」そのもので見せる
-      const alphaBase = 0.15 * sp.opacity * (0.35 + 0.65 * sp.activity) * bright;
+      // 突然変異の一族も特別な発光はさせない。変異は「親と違う冴えた色」そのもので見せる。
+      // 種族包絡(sp.opacity)はここでは外し、粒子ループ内で状態に応じた per-particle pEnv を掛ける
+      const baseRaw = 0.15 * (0.35 + 0.65 * sp.activity) * bright;
+      const fadeProgress = sp.state === 'out' ? (1 - sp.opacity) : 0;
+      const isOut = sp.state === 'out';
+      const isIn  = sp.state === 'in';
       const sat0 = Math.min(96, g.satBase * 100 * satMod);
       const lum0 = Math.min(78, g.lumBase * 100 + 6);
       const lineBase = g.glowSize * 0.55;
@@ -264,7 +268,17 @@
         hue = ((hue + diff * dn * 0.4) % 360 + 360) % 360;
         const sat = (sat0 * (1 - dn * 0.35)) | 0;
         let lum = lum0 * (1 - dn * 0.42); if (lum < 24) lum = 24;
-        const alpha = alphaBase * (1 - dn * 0.6);
+        // per-particle 包絡: 退場中はウィンクアウト(粒子の exitOffset 順に消える)、誕生中は種族 opacity 一律
+        let pEnv;
+        if (isOut) {
+          pEnv = 1 - (fadeProgress - p.exitOffset * 0.7) / 0.3;
+          if (pEnv < 0) pEnv = 0; else if (pEnv > 1) pEnv = 1;
+        } else if (isIn) {
+          pEnv = sp.opacity;
+        } else {
+          pEnv = 1;
+        }
+        const alpha = baseRaw * pEnv * (1 - dn * 0.6);
 
         ctx.strokeStyle = `hsla(${hue | 0},${sat}%,${lum | 0}%,${alpha.toFixed(3)})`;
         // 1px 未満はピクセル境界で AA が効かずジャギーが出るため最小 1.0px に保つ

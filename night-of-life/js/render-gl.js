@@ -491,7 +491,11 @@ void main() {
         const sp = species[si];
         if (sp.opacity <= 0.005) continue;
         const g = sp.genome;
-        const alphaBase = 0.15 * sp.opacity * (0.35 + 0.65 * sp.activity) * bright;
+        // 種族包絡を α 基本値から外し、粒子ループ内で状態別の per-particle pEnv を掛ける
+        const baseRaw = 0.15 * (0.35 + 0.65 * sp.activity) * bright;
+        const fadeProgress = sp.state === 'out' ? (1 - sp.opacity) : 0;
+        const isOut = sp.state === 'out';
+        const isIn  = sp.state === 'in';
         const sat0 = Math.min(96, g.satBase * 100 * satMod);
         const lum0 = Math.min(78, g.lumBase * 100 + 6);
         const lineBase = g.glowSize * 0.55;
@@ -519,7 +523,17 @@ void main() {
           let lum = lum0 * (1 - dn * 0.42);
           if (lum < 24) lum = 24;
           lum = lum | 0;
-          const alpha = alphaBase * (1 - dn * 0.6);
+          // per-particle 包絡: 退場時はウィンクアウト(exitOffset 順に消える)、誕生時は種族 opacity 一律
+          let pEnv;
+          if (isOut) {
+            pEnv = 1 - (fadeProgress - p.exitOffset * 0.7) / 0.3;
+            if (pEnv < 0) pEnv = 0; else if (pEnv > 1) pEnv = 1;
+          } else if (isIn) {
+            pEnv = sp.opacity;
+          } else {
+            pEnv = 1;
+          }
+          const alpha = baseRaw * pEnv * (1 - dn * 0.6);
 
           // 2D 版は hsla(...) 文字列をブラウザに渡して RGB 化させる。
           // ここでは同一の hslToRgb で先に RGB を出してインスタンスに渡す

@@ -30,7 +30,6 @@
   const hudEl = document.getElementById('hud');
   const hudMetaEl = hudEl.querySelector('.meta');
   const hudRowsEl = hudEl.querySelector('.rows');
-  const hudLogEl = hudEl.querySelector('.log');
 
   const field = new FlowField();
   const grid = new SpatialGrid(90);
@@ -183,16 +182,6 @@
     ctx.putImageData(img, tx, ty);
   }
 
-  // カメラ: 構造中心を見て、ごくゆっくりオービット(方位)+ 仰角のゆらぎ。
-  // Settings.cameraMotion で止められる(酔い・好みの確認用)
-  function updateCamera(dt) {
-    const c = env.cam;
-    const on = (typeof Settings !== 'undefined') ? Settings.cameraMotion !== false : true;
-    if (!on) return;
-    c.az += dt * 0.012;                              // 1 周およそ 8.7 分
-    c.el = 0.18 + 0.13 * Math.sin(env.time * 0.017); // 仰角がゆっくり上下
-  }
-
   function draw() {
     if (glRenderer) {
       // WebGL2 経路: 背景フェード + 粒子加算合成を 1 ステップで行う
@@ -210,7 +199,6 @@
     const hue0 = baseHue(hour);
     const satMod = 0.92 + daylightFactor(hour) * 0.08;
     const bright = Settings.brightness;
-    const colorSync = Settings.colorSync !== false;
 
     const cam = env.cam;
     const caz = Math.cos(cam.az), saz = Math.sin(cam.az);
@@ -263,7 +251,7 @@
         const scc = (A.sc + B.sc) * 0.5;
 
         let hue = hue0 + g.hueOffset + p.hueJ * g.hueSpread;
-        if (colorSync) hue += Math.sin(p.phase) * 8; // 同期した近傍がほのかに色を揃える(±8°)
+        hue += Math.sin(p.phase) * 8; // 同期した近傍がほのかに色を揃える(±8°)
         // 奥ほど藍(250)へ霞む大気遠近(最短弧でブレンド。新しい色は足さない)
         let diff = 250 - hue; diff = ((diff % 360) + 540) % 360 - 180;
         hue = ((hue + diff * dn * 0.4) % 360 + 360) % 360;
@@ -296,8 +284,7 @@
 
   function rebuildGrid() {
     grid.clear();
-    // 近傍は「色の同期」のためだけに使う。同期を切っているときは構築もしない
-    if (Settings.colorSync === false) return;
+    // 近傍は「色の同期」(位相同期の色相ゆらぎ)のためだけに使う
     for (const sp of evolution.species)
       for (const p of sp.particles) grid.insert(p, sp.id);
   }
@@ -321,7 +308,6 @@
     env._syncParity ^= 1;
 
     field.update(dt);
-    updateCamera(dt);
     evolution.tick(dt, env);
     rebuildGrid();
     for (const sp of evolution.species) sp.update(dt, env);
@@ -348,8 +334,11 @@
     const h = env.hour;
     const hh = String(h | 0).padStart(2, '0');
     const mm = String(((h % 1) * 60) | 0).padStart(2, '0');
-    hudMetaEl.textContent =
-      `A NIGHT OF LIFE   gen ${evolution.generation} · ${hh}:${mm}${Flags.demo ? ' · demo' : ''}`;
+    // 左: タイトル + 控えめなバージョン / 右: 世代 + 時刻(+ demo)。CSS で flex 分割
+    const info = `gen ${evolution.generation} · ${hh}:${mm}${Flags.demo ? ' · demo' : ''}`;
+    hudMetaEl.innerHTML =
+      '<span class="ttl">A NIGHT OF LIFE <span class="ver">v2.0.0</span></span>' +
+      `<span class="info">${info}</span>`;
 
     const sps = evolution.species;
     const hue0 = baseHue(h);
@@ -419,17 +408,6 @@
     for (const [sid, el] of existing) {
       if (!seen.has(sid)) el.remove();
     }
-
-    const show = evolution.eventLog.slice(-3).reverse();
-    let logHtml = '';
-    for (let i = 0; i < 3; i++) {
-      const e = show[i];
-      if (!e) { logHtml += '<div class="ev">&nbsp;</div>'; continue; }
-      const age = Math.max(0, env.time - e.time) | 0;
-      const cls = e.glyph === '✦' ? 'ev nova' : 'ev';
-      logHtml += `<div class="${cls}">${e.glyph} ${e.label}<span class="evt"> +${age}s</span></div>`;
-    }
-    hudLogEl.innerHTML = logHtml;
   }
 
   function updateDebug() {
@@ -473,7 +451,6 @@
         `particleCount ${Settings.particleCount} | perSpecies ${evolution.perSpeciesCount()}` +
         ` | evoMin ${Settings.evolutionMinutes} | hud ${Settings.showHud}`
       );
-      lines.push(`colorSync ${Settings.colorSync !== false} | cameraMotion ${Settings.cameraMotion !== false}`);
       lines.push(ErrorLog.length ? 'errors:' : 'errors: none');
       for (const er of ErrorLog) lines.push(' ' + er);
     }
@@ -511,7 +488,6 @@
         env.hour = evolution.hour(performance.now());
         env._syncParity ^= 1;
         field.update(step);
-        updateCamera(step);
         evolution.tick(step, env);
         rebuildGrid();
         for (const sp of evolution.species) sp.update(step, env);

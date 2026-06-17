@@ -189,10 +189,8 @@ class Species {
     const Rmax = env.worldR;
     const fv = env._tmp;
 
-    // 位相同期(色味だけに使う)。Settings.colorSync で切れる。
-    // 負荷分散のため 1 フレームに半数ずつ更新する
-    const colorSync = (typeof Settings !== 'undefined') ? Settings.colorSync !== false : true;
-    const K = colorSync ? 1.5 : 0;
+    // 位相同期(色味だけに使う)。負荷分散のため 1 フレームに半数ずつ更新する
+    const K = 1.5;
     const Rn = g.flockRadius * 1.4;
     const grid = env.grid;
     const parity = env._syncParity;

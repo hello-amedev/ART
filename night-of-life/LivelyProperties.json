@@ -41,16 +41,6 @@
     "text": "システム表示(世代・種族)",
     "value": true
   },
-  "colorSync": {
-    "type": "checkbox",
-    "text": "色の同期(3D実験)",
-    "value": true
-  },
-  "cameraMotion": {
-    "type": "checkbox",
-    "text": "カメラの動き",
-    "value": false
-  },
   "cameraZoom": {
     "type": "slider",
     "text": "カメラの距離(100=既定 / 大きいほど引く)",

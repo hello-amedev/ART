@@ -475,7 +475,6 @@ void main() {
       const hue0 = baseHue(hour);
       const satMod = 0.92 + daylightFactor(hour) * 0.08;
       const bright = Settings.brightness;
-      const colorSync = Settings.colorSync !== false;
 
       // 中心点投影で dn を出す。2D 版は (A.vz + B.vz) / 2 だが、vz は (x,y,z) の
       // アフィン線形関数(回転 → 平行移動)なので f((A+B)/2) = (f(A)+f(B))/2 が
@@ -515,7 +514,7 @@ void main() {
 
           // 色合成(2D 版と同式。整数化のタイミングも一致させる)
           let hue = hue0 + g.hueOffset + p.hueJ * g.hueSpread;
-          if (colorSync) hue += Math.sin(p.phase) * 8;
+          hue += Math.sin(p.phase) * 8;
           // 奥ほど藍(250)へ霞む大気遠近(最短弧でブレンド)
           let diff = 250 - hue;
           diff = ((diff % 360) + 540) % 360 - 180;

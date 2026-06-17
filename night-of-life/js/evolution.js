@@ -24,14 +24,6 @@ class Evolution {
     this.storageKey = 'art-evolution-v2'; // 遺伝子構成が変わったら番号を上げる(旧データを無効化)
     this.demoStartHour = Math.random() * 24;
     this.simOffsetMs = 0; // App.simulate() 用の仮想経過時間(デモモードのみ作用)
-    // 観測台帳の事象ログ(誕生/退場/突然変異)。観察者の手帳。保存しない実行時状態
-    this.eventLog = [];
-  }
-
-  // 事象を1件記帳(env.time 基準の相対秒で経過を表示するため time を持つ)
-  pushEvent(time, glyph, label) {
-    this.eventLog.push({ time, glyph, label });
-    if (this.eventLog.length > 6) this.eventLog.shift();
   }
 
   // 仮想時刻(0..24)。デモモードでは 1 日が約 3 分で回る
@@ -86,7 +78,6 @@ class Evolution {
     if (aliveCount < TARGET_SPECIES) {
       const g = Genome.random(env.hour);
       this.species.push(new Species(g, this.perSpeciesCount(), this.generation, env, { fadeIn: true }));
-      this.pushEvent(env.time, '+', `${this.generation}`); // 新規参入(系譜なし)
     }
   }
 
@@ -133,7 +124,6 @@ class Evolution {
       if (endScore < outScore) { outScore = endScore; out = e; }
     }
     out.s.state = 'out';
-    this.pushEvent(env.time, '↓', `${out.s.generation}`);
 
     // 親選択: 勢い(0.6)を主軸に、時刻適応(0.4)を従に。
     // 時計依存を薄め、「子を残し続ける家系が栄える」=継承そのものを選択圧にする
@@ -168,7 +158,6 @@ class Evolution {
       childGenome.hueOffset = Genome.leapHue(pa.genome.hueOffset, pb.genome.hueOffset);
     }
     this.generation++;
-    this.pushEvent(env.time, nova ? '✦' : '↑', `${this.generation} ‹${pa.generation}×${pb.generation}`);
     // 子の粒子は親 2 種族の粒子の現在位置から湧き出す(交叉が画面に見える)
     this.species.push(new Species(childGenome, this.perSpeciesCount(), this.generation, env, {
       fadeIn: true,

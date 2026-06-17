@@ -70,6 +70,17 @@
     height: 16px;
     color: rgba(255, 255, 255, 0.55);
     margin-bottom: 5px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 9px;
+    /* 右側の `gen X · HH:MM` の末尾を種族行の state 列(`·` / `in` / `↓out`)と縦に揃える。
+       state 列は min-width 38px で右端に予約されているので、その幅ぶん右をへこませる */
+    padding-right: 38px;
+  }
+  /* バージョン表記。計器の主役(数値)を邪魔しないよう、タイトルより一段薄く控える */
+  #hud .meta .ver {
+    color: rgba(255, 255, 255, 0.32);
   }
   /* 種族行は最大 6(常時 5 + 退場中 1)ぶんの高さを必ず確保 = 行の増減で動かない */
   #hud .rows {
@@ -134,24 +145,6 @@
   #hud .state.nova {
     color: rgba(255, 226, 160, 0.92);
   }
-  /* 事象ログ(誕生 ↑ / 退場 ↓ / 突然変異 ✦ / 参入 +)。観察者の手帳。
-     常に 3 行ぶんを確保し、上の罫線も固定位置 = ここも上下しない */
-  #hud .log {
-    margin-top: 5px;
-    padding-top: 5px;
-    border-top: 1px solid rgba(255, 255, 255, 0.12);
-    color: rgba(255, 255, 255, 0.32);
-  }
-  #hud .ev {
-    height: 16px;
-    white-space: nowrap;
-  }
-  #hud .ev .evt {
-    color: rgba(255, 255, 255, 0.24);
-  }
-  #hud .ev.nova {
-    color: rgba(255, 226, 160, 0.7);
-  }
   /* スマホなど幅の狭い画面では観測台帳が画面からはみ出さないよう縮小する。
      右下を基準に縮めるので位置はそのまま。視認性より「画面に収まること」を優先
      (あめさん方針: 文字は小さくて良い) */
@@ -181,7 +174,6 @@
     <span class="state"></span>
   </div>
   <div class="rows"></div>
-  <div class="log"></div>
 </div>
 <script src="js/noise.js"></script>
 <script src="js/genome.js"></script>

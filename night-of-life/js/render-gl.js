@@ -1,15 +1,16 @@
 'use strict';
 
 /*
- * WebGL2 レンダラー(Step 2-1: Canvas 2D 版と等価な絵を WebGL2 で出す土俵作り)。
+ * WebGL2 レンダラー(既定の描画経路)。
  *
- * ?gl=1 を付けて起動した時だけ tryCreateRenderGL() が成功し、main.js は
- * このレンダラーに描画を委ねる。物理(species/genome/evolution/field)・
+ * 既定で tryCreateRenderGL() が走り、成功時は main.js がこのレンダラーに描画を委ねる。
+ * ?gl=0 を付けると明示的に Canvas 2D 経路へ opt-out できる。WebGL2 未対応・初期化失敗時は
+ * 自動で Canvas 2D にフォールバックする。物理(species/genome/evolution/field)・
  * OBSERVATORIUM・lively/webui 設定は触らない。
  *
- * 等価原則: 投影式・色式・大気遠近・背景フェード・加算合成の数値は 2D 版と
- * 同一に保つ(視覚的に同じ絵を出す)。HDR FBO・ブルーム・被写界深度は
- * 2-2 以降で導入する。
+ * 描画原則: 投影式・色式・大気遠近・背景フェード・加算合成は 2D 版と同式を維持しつつ、
+ * HDR FBO (RGBA16F) を標準採用して 8-bit 量子化由来の残光固着を回避。ブルーム・被写界深度は
+ * Step 2-2 以降で積む。
  */
 
 (() => {

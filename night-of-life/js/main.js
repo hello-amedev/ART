@@ -18,10 +18,11 @@
 (() => {
   const TAU = Math.PI * 2;
   const canvas = document.getElementById('canvas');
-  // ?gl=1 で WebGL2 レンダラーを試す。コンテキスト種別は排他なので、
-  // 取得に成功した時だけ 2D コンテキストの取得を抑止する(失敗時は従来の Canvas 2D で動く)
-  const useGL = /[?&]gl=1/.test(location.search);
-  const glRenderer = (useGL && typeof tryCreateRenderGL === 'function')
+  // 既定で WebGL2 レンダラーを試す(?gl=0 で明示的に opt-out)。
+  // コンテキスト種別は排他なので、WebGL2 取得に成功した時だけ 2D コンテキストの取得を抑止する。
+  // WebGL2 未対応・初期化失敗時は自動で Canvas 2D 経路へフォールバックする
+  const disableGL = /[?&]gl=0/.test(location.search);
+  const glRenderer = (!disableGL && typeof tryCreateRenderGL === 'function')
     ? tryCreateRenderGL(canvas)
     : null;
   const ctx = glRenderer ? null : canvas.getContext('2d');

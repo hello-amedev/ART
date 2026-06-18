@@ -475,6 +475,8 @@ void main() {
       const hue0 = baseHue(hour);
       const satMod = 0.92 + daylightFactor(hour) * 0.08;
       const bright = Settings.brightness;
+      // オービット中は paintFull で残像を消すぶん、現フレームの粒子 α を底上げする(両 renderer 共通)
+      const dragBoost = env.dragBoost || 1;
 
       // 中心点投影で dn を出す。2D 版は (A.vz + B.vz) / 2 だが、vz は (x,y,z) の
       // アフィン線形関数(回転 → 平行移動)なので f((A+B)/2) = (f(A)+f(B))/2 が
@@ -492,7 +494,7 @@ void main() {
         if (sp.opacity <= 0.005) continue;
         const g = sp.genome;
         // 種族包絡を α 基本値から外し、粒子ループ内で状態別の per-particle pEnv を掛ける
-        const baseRaw = 0.15 * (0.35 + 0.65 * sp.activity) * bright;
+        const baseRaw = 0.15 * (0.35 + 0.65 * sp.activity) * bright * dragBoost;
         const fadeProgress = sp.state === 'out' ? (1 - sp.opacity) : 0;
         const isOut = sp.state === 'out';
         const isIn  = sp.state === 'in';

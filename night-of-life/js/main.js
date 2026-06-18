@@ -46,6 +46,7 @@
     field, grid,
     _tmp: [0, 0, 0, 0, 0, 0], // flowAt の出力バッファ(0..2=流れ / 3..5=最寄りの渦輪点)
     _syncParity: 0,          // 位相同期を 1 フレームに半数ずつ回すための偶奇
+    dragBoost: 1,            // オービット中だけ粒子 α を底上げする倍率(両 renderer が乗算する)
   };
 
   function resize() {
@@ -225,12 +226,14 @@
       o.sc = sc;
     }
 
+    // オービット中は paintFull で残像を消すぶん、現フレームの粒子 α を底上げする
+    const dragBoost = env.dragBoost || 1;
     for (const sp of evolution.species) {
       if (sp.opacity <= 0.005) continue;
       const g = sp.genome;
       // 突然変異の一族も特別な発光はさせない。変異は「親と違う冴えた色」そのもので見せる。
       // 種族包絡(sp.opacity)はここでは外し、粒子ループ内で状態に応じた per-particle pEnv を掛ける
-      const baseRaw = 0.15 * (0.35 + 0.65 * sp.activity) * bright;
+      const baseRaw = 0.15 * (0.35 + 0.65 * sp.activity) * bright * dragBoost;
       const fadeProgress = sp.state === 'out' ? (1 - sp.opacity) : 0;
       const isOut = sp.state === 'out';
       const isIn  = sp.state === 'in';
@@ -467,6 +470,9 @@
   const CAM_EL_MIN = -1.4;             // 真下から少し手前で頭打ち(逆さ反転を防ぐ)
   const CAM_EL_MAX = 1.4;
   const CAM_DRAG_SENS = 0.005;         // rad per CSS px
+  // ドラッグ中は paintFull で残像が消える → 粒子 1 フレームぶんの輝度では暗くなるので、
+  // 「軌跡のない輝く粒子」になるよう env.dragBoost で粒子 α を底上げする(両 renderer 共通)
+  const CAM_DRAG_BOOST = 15;
   // 計器・診断・歯車アイコン・設定パネルの上で始まったクリックではオービットを起こさない
   // (HUD と #debug は pointer-events:none で canvas に素通りしてくるので明示除外が要る)
   const CAM_DRAG_BLOCKERS = ['hud', 'debug', 'nol-webui-icon', 'nol-webui'];
@@ -537,6 +543,7 @@
       try { canvas.releasePointerCapture(camDrag.pointerId); } catch (_) {}
     }
     camDrag = null;
+    env.dragBoost = 1;
   }
 
   canvas.addEventListener('pointerdown', (e) => {
@@ -545,6 +552,7 @@
     if (camDrag) return;
     for (const id of CAM_DRAG_BLOCKERS) if (pointInVisibleEl(e, id)) return;
     camDrag = { pointerId: e.pointerId, lastX: e.clientX, lastY: e.clientY };
+    env.dragBoost = CAM_DRAG_BOOST;
     try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
   });
 

@@ -311,6 +311,9 @@
     evolution.tick(dt, env);
     rebuildGrid();
     for (const sp of evolution.species) sp.update(dt, env);
+    // ドラッグ中は前フレームの残像で「いまの視点」が読みにくくなるので、
+    // 描画前に背景を完全に塗りつぶして残像を消す(離せば自然に余韻が戻る)
+    if (camDrag) paintFull();
     draw();
 
     updateHud(dt);
@@ -457,6 +460,17 @@
     debugEl.textContent = lines.join('\n');
   }
 
+  // === マウス/タッチのドラッグで中心点まわりに視点を回す ===
+  // env.cam.az / env.cam.el は両 renderer が毎フレーム読むので直接書き換えるだけで反映される
+  const CAM_DEFAULT_AZ = 0.6;
+  const CAM_DEFAULT_EL = 0.34;
+  const CAM_EL_MIN = -1.4;             // 真下から少し手前で頭打ち(逆さ反転を防ぐ)
+  const CAM_EL_MAX = 1.4;
+  const CAM_DRAG_SENS = 0.005;         // rad per CSS px
+  // 計器・診断・歯車アイコン・設定パネルの上で始まったクリックではオービットを起こさない
+  // (HUD と #debug は pointer-events:none で canvas に素通りしてくるので明示除外が要る)
+  const CAM_DRAG_BLOCKERS = ['hud', 'debug', 'nol-webui-icon', 'nol-webui'];
+
   // Lively の設定画面から呼ばれる操作
   window.App = {
     applyParticleCount() {
@@ -499,6 +513,77 @@
       return `simulated ${seconds}s (${n} frames) in ${ms.toFixed(0)}ms = ${(ms / n).toFixed(2)}ms/frame`;
     },
   };
+
+  // ドラッグハンドラ本体 (上の CAM_DEFAULT_AZ などを参照)
+  let camDrag = null;                  // { pointerId, lastX, lastY } when dragging
+  // ドラッグ中フラグは frame() から見て paintFull を毎フレーム掛けるかの判定に使う
+  // (カーソルは既定のまま変えない — あめさん要望)
+  // 単指ドラッグはオービットに使う(スクロール暴発防止)が、二本指のピンチズームは残す
+  // — HUD と設定パネルが 11px と小さいので、低視力ユーザーの拡大を奪わないため。
+  canvas.style.touchAction = 'pinch-zoom';
+  canvas.style.userSelect = 'none';
+  canvas.style.webkitTouchCallout = 'none';  // iOS Safari の長押しコールアウト抑止
+
+  function pointInVisibleEl(e, id) {
+    const el = document.getElementById(id);
+    if (!el) return false;
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return false;  // hidden 属性等で潰れている時はスキップ
+    return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+  }
+
+  function clearCamDrag() {
+    if (camDrag) {
+      try { canvas.releasePointerCapture(camDrag.pointerId); } catch (_) {}
+    }
+    camDrag = null;
+  }
+
+  canvas.addEventListener('pointerdown', (e) => {
+    // マウスは主ボタンのみ。タッチ/ペンは button が 0 でないことがある(ペン側ボタン等)ので素通り
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (camDrag) return;
+    for (const id of CAM_DRAG_BLOCKERS) if (pointInVisibleEl(e, id)) return;
+    camDrag = { pointerId: e.pointerId, lastX: e.clientX, lastY: e.clientY };
+    try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+  });
+
+  canvas.addEventListener('pointermove', (e) => {
+    if (!camDrag || e.pointerId !== camDrag.pointerId) return;
+    // setPointerCapture が効かない環境で pointerup を取りこぼした時のセーフティ:
+    // マウスで主ボタンが離れているのに pointermove が来たらドラッグ終了として扱う
+    if (e.pointerType === 'mouse' && (e.buttons & 1) === 0) { clearCamDrag(); return; }
+    const dx = e.clientX - camDrag.lastX;
+    const dy = e.clientY - camDrag.lastY;
+    camDrag.lastX = e.clientX;
+    camDrag.lastY = e.clientY;
+    env.cam.az += dx * CAM_DRAG_SENS;
+    let el = env.cam.el - dy * CAM_DRAG_SENS;
+    if (el < CAM_EL_MIN) el = CAM_EL_MIN;
+    else if (el > CAM_EL_MAX) el = CAM_EL_MAX;
+    env.cam.el = el;
+  });
+
+  function endCamDrag(e) {
+    if (!camDrag) return;
+    if (e && e.pointerId !== undefined && e.pointerId !== camDrag.pointerId) return;
+    clearCamDrag();
+  }
+  // ふつうは canvas で pointerup/cancel が取れるが、setPointerCapture が効かないホストや
+  // 別要素・ウィンドウ外でリリースされた時のためにウィンドウ側にも保険を張る
+  canvas.addEventListener('pointerup', endCamDrag);
+  canvas.addEventListener('pointercancel', endCamDrag);
+  canvas.addEventListener('lostpointercapture', endCamDrag);
+  window.addEventListener('pointerup', endCamDrag);
+  window.addEventListener('pointercancel', endCamDrag);
+  // タブ切替/Alt-Tab で離した手の pointerup を見失う場合の保険
+  window.addEventListener('blur', () => clearCamDrag());
+  document.addEventListener('visibilitychange', () => { if (document.hidden) clearCamDrag(); });
+
+  canvas.addEventListener('dblclick', () => {
+    env.cam.az = CAM_DEFAULT_AZ;
+    env.cam.el = CAM_DEFAULT_EL;
+  });
 
   window.addEventListener('resize', resize);
 

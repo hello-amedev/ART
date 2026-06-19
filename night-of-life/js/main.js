@@ -491,6 +491,12 @@
       evolution.reset(env);
       paintFull();
     },
+    // オービット(クリック&ドラッグで動かした視点)を初期角度に戻す。
+    // 両 renderer は毎フレーム env.cam.az / env.cam.el を読むので apply は要らない
+    resetCamera() {
+      env.cam.az = CAM_DEFAULT_AZ;
+      env.cam.el = CAM_DEFAULT_EL;
+    },
     // 動作確認用: いますぐ世代交代を 1 回起こし、大きな突然変異を強制する
     forceNova() {
       evolution.genTimer = 0;

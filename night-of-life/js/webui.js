@@ -42,6 +42,7 @@
     ecoMode: '省電力モード',
     showHud: 'システム表示(世代・種族)',
     forceNova: '突然変異を起こす',
+    resetCamSettings: 'カメラ・設定をリセット',
     resetEvolution: '進化をリセット',
     resetConfirm: '進化を第 1 世代からやり直します。よろしいですか?',
   } : {
@@ -58,6 +59,7 @@
     ecoMode: 'Eco mode',
     showHud: 'System display',
     forceNova: 'Trigger mutation',
+    resetCamSettings: 'Reset camera & settings',
     resetEvolution: 'Reset evolution',
     resetConfirm: 'Reset evolution from generation 1. Are you sure?',
   };
@@ -83,6 +85,22 @@
 
   const WEB_KEY = 'art-web-settings-v1';
 
+  // 起動時の Settings(loadSaved 適用前)を「既定値」として snapshot。
+  // 「カメラ・設定をリセット」ボタンで参照する。
+  // 値は livelyPropertyListener が受け取る形式(brightness/trailLength/cameraZoom は 0-100% 整数、
+  // それ以外は Settings と同じ型)で保持して、リセット時はそのまま realListener へ流せるようにする。
+  // isSmallScreen で particleCount が 4000 / 5500 と分岐するのも含めて、
+  // 端末に応じた初期値が自動で取れる
+  const Defaults = {
+    particleCount:    Settings.particleCount,
+    evolutionMinutes: Settings.evolutionMinutes,
+    brightness:       Math.round(Settings.brightness * 100),
+    trailLength:      Math.round(Settings.trailLength * 100),
+    ecoMode:          Settings.ecoMode,
+    showHud:          Settings.showHud,
+    cameraZoom:       Math.round(Settings.cameraZoom * 100),
+  };
+
   // 表示する項目。値の渡し方は LivelyProperties.json と揃える
   // (livelyPropertyListener がその前提でクランプ・変換するため)。
   // type=slider は数値、checkbox は真偽、button は押下のみ。
@@ -103,6 +121,11 @@
     { name: 'showHud',          label: STR.showHud,          type: 'checkbox',
       get: () => Settings.showHud },
     { name: 'forceNova',        label: STR.forceNova,        type: 'button' },
+    // カメラ角度(オービット)+ パネル内の全スライダー/チェックボックスを既定値に戻す。
+    // 進化データ(genome/世代)はリセットせず、それは下の「進化をリセット」が担当。
+    // 確認ダイアログは出さない(進化と違ってすぐ戻せる軽い操作なので)
+    { name: 'resetCamSettings', label: STR.resetCamSettings, type: 'button',
+      action: () => resetCamSettings() },
     { name: 'resetEvolution',   label: STR.resetEvolution,   type: 'button', confirm: STR.resetConfirm },
   ];
 
@@ -128,6 +151,33 @@
       if (c.type !== 'button' && c.get) data[c.name] = c.get();
     }
     try { localStorage.setItem(WEB_KEY, JSON.stringify(data)); } catch (e) { /* noop */ }
+  }
+
+  // 「カメラ・設定をリセット」ボタンの処理本体。
+  // パネル内の全コントロール + オービット(クリック&ドラッグで動かした視点)を初期値へ戻す。
+  // 進化データ(genome/世代)は触らない(別ボタン「進化をリセット」が担当)
+  function resetCamSettings() {
+    for (const c of CONTROLS) {
+      if (typeof Defaults[c.name] !== 'undefined') {
+        try { realListener(c.name, Defaults[c.name]); } catch (e) { /* noop */ }
+      }
+    }
+    if (window.App && typeof App.resetCamera === 'function') App.resetCamera();
+    refreshControls();
+    save();
+  }
+
+  // CONTROLS の現在値を DOM(スライダー位置・チェックボックス状態)へ反映
+  function refreshControls() {
+    for (const c of CONTROLS) {
+      if (!c._input || !c.get) continue;
+      if (c.type === 'slider') {
+        c._input.value = c.get();
+        if (c._val) c._val.textContent = c._input.value;
+      } else if (c.type === 'checkbox') {
+        c._input.checked = !!c.get();
+      }
+    }
   }
 
   function buildStyle() {
@@ -321,6 +371,9 @@
           realListener(c.name, Number(input.value));
           save();
         });
+        // resetCamSettings() で表示値を書き戻すために DOM 参照を保持
+        c._input = input;
+        c._val = val;
 
       } else if (c.type === 'checkbox') {
         ctl.classList.add('check');
@@ -338,6 +391,8 @@
           realListener(c.name, input.checked);
           save();
         });
+        // resetCamSettings() で表示値を書き戻すために DOM 参照を保持
+        c._input = input;
 
       } else { // button
         const btn = document.createElement('button');
@@ -347,7 +402,8 @@
         ctl.appendChild(btn);
         btn.addEventListener('click', () => {
           if (c.confirm && !window.confirm(c.confirm)) return;
-          realListener(c.name, 'web');
+          if (c.action) c.action();
+          else realListener(c.name, 'web');
         });
       }
 

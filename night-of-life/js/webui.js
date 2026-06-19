@@ -39,6 +39,8 @@
     evolutionMinutes: '世代交代の間隔(分)',
     brightness: '明るさ(%)',
     trailLength: '軌跡の長さ(%)',
+    bloomStrength: '光のにじみ',
+    bloomUnavailable: 'この環境ではブルームを表示できません',
     ecoMode: '省電力モード',
     showHud: 'システム表示(世代・種族)',
     forceNova: '突然変異を起こす',
@@ -56,6 +58,8 @@
     evolutionMinutes: 'Generation interval (min)',
     brightness: 'Brightness (%)',
     trailLength: 'Trail length (%)',
+    bloomStrength: 'Bloom',
+    bloomUnavailable: 'Bloom is not available in this environment',
     ecoMode: 'Eco mode',
     showHud: 'System display',
     forceNova: 'Trigger mutation',
@@ -99,6 +103,8 @@
     ecoMode:          Settings.ecoMode,
     showHud:          Settings.showHud,
     cameraZoom:       Math.round(Settings.cameraZoom * 100),
+    // ブルーム既定値は 0(opt-in)。あめさん視認確定後の二段階デプロイで 40-60 に動かす
+    bloomStrength:    Math.round(Settings.bloomStrength * 100),
   };
 
   // 表示する項目。値の渡し方は LivelyProperties.json と揃える
@@ -114,6 +120,10 @@
       get: () => Settings.evolutionMinutes },
     { name: 'brightness',       label: STR.brightness,       type: 'slider', min: 40,  max: 160,  step: 5,
       get: () => Math.round(Settings.brightness * 100) },
+    // ブルーム強度(Step 2-2)。bloomReady=false(WebGL2/HDR/OES_linear のいずれか欠落)時は
+    // 描画側で bypass されるので、UI も disabled + opacity 50% + ツールチップ表示で意図を見せる
+    { name: 'bloomStrength',    label: STR.bloomStrength,    type: 'slider', min: 0,   max: 150,  step: 5,
+      get: () => Math.round(Settings.bloomStrength * 100) },
     { name: 'trailLength',      label: STR.trailLength,      type: 'slider', min: 10,  max: 95,   step: 5,
       get: () => Math.round(Settings.trailLength * 100) },
     { name: 'ecoMode',          label: STR.ecoMode,          type: 'checkbox',
@@ -374,6 +384,16 @@
         // resetCamSettings() で表示値を書き戻すために DOM 参照を保持
         c._input = input;
         c._val = val;
+        // ブルームは WebGL2 + HDR + OES_texture_half_float_linear が揃わない環境では使えない。
+        // 描画側で bypass しているが、UI でも操作不能を可視化して「動かしたのに変わらない」混乱を防ぐ
+        if (c.name === 'bloomStrength') {
+          const bloomReady = !!(window.App && typeof App.isBloomReady === 'function' && App.isBloomReady());
+          if (!bloomReady) {
+            input.disabled = true;
+            ctl.style.opacity = '0.5';
+            ctl.title = STR.bloomUnavailable;
+          }
+        }
 
       } else if (c.type === 'checkbox') {
         ctl.classList.add('check');

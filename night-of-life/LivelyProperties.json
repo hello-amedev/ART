@@ -49,6 +49,14 @@
     "max": 200,
     "step": 5
   },
+  "bloomStrength": {
+    "type": "slider",
+    "text": "光のにじみ(0=オフ / 60 推奨)",
+    "value": 0,
+    "min": 0,
+    "max": 150,
+    "step": 5
+  },
   "bottomMargin": {
     "type": "slider",
     "text": "下端の余白(計器がタスクバーに隠れる時に調整)",

@@ -26,6 +26,12 @@
     ? tryCreateRenderGL(canvas)
     : null;
   const ctx = glRenderer ? null : canvas.getContext('2d');
+
+  // ブルームのキルスイッチと可視化フラグを WebGL2 経路だけに反映する。
+  // ?bloom=0 が来ていれば bloomReady を false に倒し、_renderBloom も blit の bloom 加算も切られる
+  // (UI 側もこのフラグを見て disabled になる)。?bloomDebug=1 で fboBloomB をフル画面表示
+  if (glRenderer && Flags.killBloom) glRenderer.bloomReady = false;
+  if (glRenderer && Flags.bloomDebug) glRenderer.bloomDebug = true;
   const debugEl = document.getElementById('debug');
   const hudEl = document.getElementById('hud');
   const hudMetaEl = hudEl.querySelector('.meta');
@@ -496,6 +502,11 @@
     resetCamera() {
       env.cam.az = CAM_DEFAULT_AZ;
       env.cam.el = CAM_DEFAULT_EL;
+    },
+    // ブルーム利用可否(WebGL2 + HDR FBO + OES_texture_half_float_linear + シェーダー link 全成功)。
+    // webui.js の設定パネルが起動時にこれを読んで、不可なら bloomStrength スライダーを disabled にする
+    isBloomReady() {
+      return !!(glRenderer && glRenderer.bloomReady);
     },
     // 動作確認用: いますぐ世代交代を 1 回起こし、大きな突然変異を強制する
     forceNova() {

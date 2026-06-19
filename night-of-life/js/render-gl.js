@@ -192,14 +192,98 @@ void main() {
   gl_Position = vec4(a_position, 0.0, 1.0);
 }`;
 
+  // blit シェーダーは bloom を加算合成する拡張版。
+  // bloomReady=false / strength=0 時は u_bloom に u_src と同じ FBO を再バインドし u_intensity=0 で渡せば、
+  // 数学的に従来の素貼りと同等の出力になる(分岐は GL 状態だけで吸収)
   const BLIT_FRAG_SRC = `#version 300 es
 precision mediump float;
 in vec2 v_uv;
 uniform sampler2D u_src;
+uniform sampler2D u_bloom;
+uniform float u_intensity;
 out vec4 outColor;
 void main() {
-  // FBO の RGB をそのまま出力。8-bit screen への書き出しで自動的に [0,1] にクランプ
-  outColor = vec4(texture(u_src, v_uv).rgb, 1.0);
+  vec3 hdr = texture(u_src, v_uv).rgb;
+  vec3 bloom = texture(u_bloom, v_uv).rgb;
+  // ここで初めて 1 回だけ 8-bit 量子化が走るので、累積残光が固着しない
+  outColor = vec4(hdr + bloom * u_intensity, 1.0);
+}`;
+
+  // --- ブルーム(WebGL2 化 Step 2-2) ---
+  // 採用案: 半解像度 1 段の分離ガウシアン(9-tap, σ=2.0px)。HDR FBO の明部のみ抽出して
+  // 横→縦の 2 パスでぼかし、blit 統合で加算合成する。BrightBlurH は明部抽出と横ガウシアンを 1 パスに統合
+  // しているので合計 2 パスで済む(コストは +0.5-0.8ms 程度を想定)。
+  // - 閾値: u_threshold=1.0(HDR の物理的飽和ライン)、u_softKnee=0.3、Unity URP 互換式
+  // - 輝度判定: Rec.709 luminance(`max(r,g,b)` は色相位相同期 ±8° で閾値直上を越境するため不採用)
+  // - サニタイズ: シェーダー先頭で `max(c, 0)` を取って負値混入による黒い穴を防ぐ
+  // - precision: highp 明示(mediump だと smoothstep のバンドや fp16 飽和が出る環境がある)
+  // 重み配列は σ=2.0 のガウシアンを正規化したもの(両側合計 ≒ 1.0)
+  const BLOOM_BRIGHTBLURH_FRAG_SRC = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+uniform sampler2D u_src;
+uniform vec2 u_texelStep;          // 横方向 1 texel = (1/srcW, 0)
+uniform float u_threshold;
+uniform float u_softKnee;
+out vec4 outColor;
+
+const float K_0 = 0.20236;
+const float K_1 = 0.17996;
+const float K_2 = 0.12393;
+const float K_3 = 0.06598;
+const float K_4 = 0.02703;
+
+vec3 brightPass(vec2 uv) {
+  // 負値は HDR FBO で稀に出る(blendFunc の数値誤差等)。max(0) で黒い穴を防ぐ
+  vec3 c = max(texture(u_src, uv).rgb, vec3(0.0));
+  // Rec.709 luminance。max(r,g,b) だと色相シフト ±8° で閾値を越境するので採用しない
+  float br = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  // Unity URP 互換の soft-knee 式。閾値直下の値をなめらかに減衰させる
+  float knee = max(u_softKnee, 1e-5);
+  float soft = clamp((br - u_threshold + knee) / (2.0 * knee), 0.0, 1.0);
+  soft = soft * soft * (3.0 - 2.0 * soft);
+  float contribution = max(soft, (br - u_threshold) / max(br, 1e-5));
+  return c * contribution;
+}
+
+void main() {
+  vec3 sum = brightPass(v_uv) * K_0;
+  sum += brightPass(v_uv + u_texelStep) * K_1;
+  sum += brightPass(v_uv - u_texelStep) * K_1;
+  sum += brightPass(v_uv + u_texelStep * 2.0) * K_2;
+  sum += brightPass(v_uv - u_texelStep * 2.0) * K_2;
+  sum += brightPass(v_uv + u_texelStep * 3.0) * K_3;
+  sum += brightPass(v_uv - u_texelStep * 3.0) * K_3;
+  sum += brightPass(v_uv + u_texelStep * 4.0) * K_4;
+  sum += brightPass(v_uv - u_texelStep * 4.0) * K_4;
+  outColor = vec4(sum, 1.0);
+}`;
+
+  // 縦ガウシアン(明部抽出はパス 1 で済んでいるので普通の blur)
+  const BLOOM_BLURV_FRAG_SRC = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+uniform sampler2D u_src;
+uniform vec2 u_texelStep;          // 縦方向 1 texel = (0, 1/srcH)
+out vec4 outColor;
+
+const float K_0 = 0.20236;
+const float K_1 = 0.17996;
+const float K_2 = 0.12393;
+const float K_3 = 0.06598;
+const float K_4 = 0.02703;
+
+void main() {
+  vec3 sum = texture(u_src, v_uv).rgb * K_0;
+  sum += texture(u_src, v_uv + u_texelStep).rgb * K_1;
+  sum += texture(u_src, v_uv - u_texelStep).rgb * K_1;
+  sum += texture(u_src, v_uv + u_texelStep * 2.0).rgb * K_2;
+  sum += texture(u_src, v_uv - u_texelStep * 2.0).rgb * K_2;
+  sum += texture(u_src, v_uv + u_texelStep * 3.0).rgb * K_3;
+  sum += texture(u_src, v_uv - u_texelStep * 3.0).rgb * K_3;
+  sum += texture(u_src, v_uv + u_texelStep * 4.0).rgb * K_4;
+  sum += texture(u_src, v_uv - u_texelStep * 4.0).rgb * K_4;
+  outColor = vec4(sum, 1.0);
 }`;
 
   function compileShader(gl, type, src) {
@@ -245,6 +329,29 @@ void main() {
       this.fboH = 0;
       this.programBlit = null;
       this.uSrcTex = null;
+      this.uBlitBloom = null;
+      this.uBlitIntensity = null;
+
+      // ブルーム状態(Step 2-2)。3 段階チェック全成功で bloomReady=true、
+      // 1 つでも失敗で完全 bypass(HDR 経路は維持)
+      this.bloomReady = false;
+      this.programBrightBlurH = null;
+      this.uBrightSrc = null;
+      this.uBrightTexelStep = null;
+      this.uBrightThreshold = null;
+      this.uBrightSoftKnee = null;
+      this.programBlurV = null;
+      this.uBlurVSrc = null;
+      this.uBlurVTexelStep = null;
+      // 半解像度 ping-pong 用 FBO 2 枚
+      this.fboBloomA = null;
+      this.fboBloomATex = null;
+      this.fboBloomB = null;
+      this.fboBloomBTex = null;
+      this.fboBloomW = 0;
+      this.fboBloomH = 0;
+      // ?bloomDebug=1 で半解像度 fboBloomB をフル画面表示する隠しフラグ
+      this.bloomDebug = false;
     }
 
     init() {
@@ -330,10 +437,41 @@ void main() {
       if (halfFloatExt) {
         this.programBlit = linkProgram(gl, BLIT_VERT_SRC, BLIT_FRAG_SRC);
         this.uSrcTex = gl.getUniformLocation(this.programBlit, 'u_src');
+        this.uBlitBloom = gl.getUniformLocation(this.programBlit, 'u_bloom');
+        this.uBlitIntensity = gl.getUniformLocation(this.programBlit, 'u_intensity');
         this.useHDR = true;
         console.info('[render-gl] HDR FBO (RGBA16F) mode enabled');
       } else {
         console.warn('[render-gl] EXT_color_buffer_half_float unavailable; 8-bit direct path (residue may accumulate)');
+      }
+
+      // ブルーム(Step 2-2)の 2 段階チェック:
+      // (1) HDR FBO が使える (useHDR=true)
+      // (2) ブルームシェーダー 2 本が link 成功
+      // 1 つでも失敗で完全 bypass(HDR 経路自体は維持し blit はそのまま動く)。
+      // OES_texture_half_float_linear は試すが、取れなくてもブルームは有効にする
+      // (Chrome/Firefox の WebGL2 では明示取得できなくても RGBA16F の LINEAR filter は
+      // 動く実装がほとんどで、取得失敗で UI を disabled にする方が実害が大きいため)。
+      if (this.useHDR) {
+        try {
+          this.programBrightBlurH = linkProgram(gl, BLIT_VERT_SRC, BLOOM_BRIGHTBLURH_FRAG_SRC);
+          this.uBrightSrc        = gl.getUniformLocation(this.programBrightBlurH, 'u_src');
+          this.uBrightTexelStep  = gl.getUniformLocation(this.programBrightBlurH, 'u_texelStep');
+          this.uBrightThreshold  = gl.getUniformLocation(this.programBrightBlurH, 'u_threshold');
+          this.uBrightSoftKnee   = gl.getUniformLocation(this.programBrightBlurH, 'u_softKnee');
+          this.programBlurV      = linkProgram(gl, BLIT_VERT_SRC, BLOOM_BLURV_FRAG_SRC);
+          this.uBlurVSrc         = gl.getUniformLocation(this.programBlurV, 'u_src');
+          this.uBlurVTexelStep   = gl.getUniformLocation(this.programBlurV, 'u_texelStep');
+          const linearExt = gl.getExtension('OES_texture_half_float_linear');
+          this.bloomReady = true;
+          console.info('[render-gl] bloom (half-res 9-tap separable Gaussian) ready'
+            + (linearExt ? ' (LINEAR filter explicitly granted)' : ' (LINEAR filter relying on WebGL2 default; OES_texture_half_float_linear was not granted)'));
+        } catch (e) {
+          console.warn('[render-gl] bloom shader link failed; bloom disabled:', e);
+          this.bloomReady = false;
+        }
+      } else {
+        console.warn('[render-gl] bloom disabled because HDR FBO is unavailable');
       }
 
       return true;
@@ -342,6 +480,8 @@ void main() {
     resize(physW, physH) {
       this.gl.viewport(0, 0, physW, physH);
       if (this.useHDR) this._createFBO(physW, physH);
+      // ブルーム用の半解像度 FBO もリサイズ時に再作成(前回サイズ一致なら内部でスキップ)
+      if (this.bloomReady) this._createBloomFBOs(physW, physH);
     }
 
     // FBO テクスチャ + framebuffer を作り直す(canvas サイズが変わるたびに必要)
@@ -376,6 +516,92 @@ void main() {
       }
       this.fboW = physW;
       this.fboH = physH;
+    }
+
+    // ブルーム用の半解像度 FBO 2 枚(ping-pong 用)。bloomReady=true でのみ呼ばれる。
+    // - サイズは max(1, physW>>1) × max(1, physH>>1)(低 DPR / 奇数解像度セーフ)
+    // - LINEAR フィルタ(半解像度→フル解像度の拡大で bilinear に頼る)
+    // - 前回サイズ一致なら再作成スキップ(resize 連打でリークしないため)
+    _createBloomFBOs(physW, physH) {
+      const gl = this.gl;
+      const bw = Math.max(1, physW >> 1);
+      const bh = Math.max(1, physH >> 1);
+      if (this.fboBloomA && this.fboBloomW === bw && this.fboBloomH === bh) return;
+
+      // 既存があれば削除(リサイズで作り直す)
+      if (this.fboBloomATex) gl.deleteTexture(this.fboBloomATex);
+      if (this.fboBloomA)    gl.deleteFramebuffer(this.fboBloomA);
+      if (this.fboBloomBTex) gl.deleteTexture(this.fboBloomBTex);
+      if (this.fboBloomB)    gl.deleteFramebuffer(this.fboBloomB);
+      this.fboBloomA = this.fboBloomATex = null;
+      this.fboBloomB = this.fboBloomBTex = null;
+
+      const makeFbo = () => {
+        const tex = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, bw, bh, 0, gl.RGBA, gl.HALF_FLOAT, null);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        const fb = gl.createFramebuffer();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+        const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+        if (status !== gl.FRAMEBUFFER_COMPLETE) {
+          gl.deleteTexture(tex);
+          gl.deleteFramebuffer(fb);
+          return null;
+        }
+        return { tex, fb };
+      };
+      const a = makeFbo();
+      const b = makeFbo();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      if (!a || !b) {
+        console.warn('[render-gl] bloom FBO incomplete; bloom disabled');
+        this.bloomReady = false;
+        return;
+      }
+      this.fboBloomATex = a.tex; this.fboBloomA = a.fb;
+      this.fboBloomBTex = b.tex; this.fboBloomB = b.fb;
+      this.fboBloomW = bw;
+      this.fboBloomH = bh;
+    }
+
+    // ブルーム本体: HDR FBO → fboBloomA (明部+横ぼかし) → fboBloomB (縦ぼかし)
+    // 呼び出し側で bloomReady と effectiveStrength のガード済み前提
+    _renderBloom() {
+      const gl = this.gl;
+      const bw = this.fboBloomW, bh = this.fboBloomH;
+
+      gl.disable(gl.BLEND);                // ブルームパスは合成しない(直接書き込み)
+      gl.bindVertexArray(this.vaoBg);
+
+      // Pass 1: HDR FBO → fboBloomA(明部抽出 + 横 9-tap ガウシアン統合)
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboBloomA);
+      gl.viewport(0, 0, bw, bh);
+      gl.useProgram(this.programBrightBlurH);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.fboTex);
+      gl.uniform1i(this.uBrightSrc, 0);
+      // u_texelStep は読み取り元(HDR FBO=フル解像度)の 1 texel に基づく
+      gl.uniform2f(this.uBrightTexelStep, 1.0 / this.fboW, 0.0);
+      gl.uniform1f(this.uBrightThreshold, 1.0);    // HDR の物理的飽和ライン
+      gl.uniform1f(this.uBrightSoftKnee, 0.3);     // 閾値直下のなめらか減衰幅
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+      // Pass 2: fboBloomA → fboBloomB(縦 9-tap ガウシアン)
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboBloomB);
+      gl.viewport(0, 0, bw, bh);
+      gl.useProgram(this.programBlurV);
+      gl.bindTexture(gl.TEXTURE_2D, this.fboBloomATex);
+      gl.uniform1i(this.uBlurVSrc, 0);
+      // 縦パスの texelStep は半解像度の高さ(読み取り元 = fboBloomA = 半解像度)
+      gl.uniform2f(this.uBlurVTexelStep, 0.0, 1.0 / bh);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+      gl.bindVertexArray(null);
     }
 
     // 起動時・リセット時: 画面全体を当時刻の背景色で塗る
@@ -450,19 +676,64 @@ void main() {
         gl.bindVertexArray(null);
       }
 
-      // 3) HDR: FBO の内容を画面に転写(ここで初めて 8-bit 量子化が走るので残光は累積しない)
+      // 2.5) ブルーム(Step 2-2): bloomReady と Settings.bloomStrength > 0 でのみ走る。
+      // オービット中(env.dragBoost=15)はブルーム強度を 1/dragBoost に減衰させ、
+      // 操作トリガーの「一様な呼吸」禁忌に踏まないよう構造的に分離する
+      let effectiveStrength = 0;
+      if (this.useHDR && this.bloomReady && this.fboBloomA && this.fboBloomB) {
+        const raw = Settings.bloomStrength || 0;
+        if (raw > 0.001) {
+          const dragBoost = env.dragBoost || 1;
+          effectiveStrength = raw / Math.max(1, dragBoost);
+          if (effectiveStrength > 0.001) {
+            this._renderBloom();
+          } else {
+            effectiveStrength = 0;
+          }
+        }
+      }
+
+      // 3) HDR: FBO の内容を画面に転写(ブルームがあれば加算合成)。
+      //    ここで初めて 8-bit 量子化が走るので残光は累積しない
       if (this.useHDR && this.fbo) {
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         gl.viewport(0, 0, this.canvas.width, this.canvas.height);
         gl.disable(gl.BLEND);                       // blit はソースをそのまま貼る
         gl.useProgram(this.programBlit);
+        // u_src = HDR FBO
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, this.fboTex);
         gl.uniform1i(this.uSrcTex, 0);
+        // u_bloom = ブルーム結果(effectiveStrength=0 時は fboTex を再バインドして強度 0 で渡す)。
+        // ?bloomDebug=1 時は fboBloomB をフル画面に出して中身を可視化(UI には出さない)
+        gl.activeTexture(gl.TEXTURE1);
+        if (this.bloomDebug && this.bloomReady && this.fboBloomBTex) {
+          gl.bindTexture(gl.TEXTURE_2D, this.fboBloomBTex);
+          gl.uniform1i(this.uBlitBloom, 1);
+          gl.uniform1f(this.uBlitIntensity, 1.0);
+          // HDR を消して bloom だけを見せるために、u_src も fboBloomB に向けて差し替え
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D, this.fboBloomBTex);
+          // hdr + bloom * 1 = 2 倍になるが、デバッグ用なので可視性優先
+        } else if (effectiveStrength > 0) {
+          gl.bindTexture(gl.TEXTURE_2D, this.fboBloomBTex);
+          gl.uniform1i(this.uBlitBloom, 1);
+          gl.uniform1f(this.uBlitIntensity, effectiveStrength);
+        } else {
+          // ブルーム無効: 同じ HDR FBO を u_bloom に再バインドして u_intensity=0 で渡す。
+          // 数学的に従来の素貼りと同等(hdr + hdr * 0 = hdr)
+          gl.bindTexture(gl.TEXTURE_2D, this.fboTex);
+          gl.uniform1i(this.uBlitBloom, 1);
+          gl.uniform1f(this.uBlitIntensity, 0.0);
+        }
         gl.bindVertexArray(this.vaoBg);             // フルスクリーンクワッドを使い回す
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
         gl.bindVertexArray(null);
-        gl.enable(gl.BLEND);                        // 次フレームの合成のために復帰
+        // 状態を明示復帰: 次フレームの合成のため + texture unit を 0 に戻す
+        // (他のコードが TEXTURE0 を前提とするため、暗黙のリーク依存を断ち切る)
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+        gl.activeTexture(gl.TEXTURE0);
       }
     }
 

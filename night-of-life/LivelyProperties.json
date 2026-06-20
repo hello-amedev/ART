@@ -52,7 +52,7 @@
   "bloomStrength": {
     "type": "checkbox",
     "text": "光のにじみ",
-    "value": false
+    "value": true
   },
   "bottomMargin": {
     "type": "slider",

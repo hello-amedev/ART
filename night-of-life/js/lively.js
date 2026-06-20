@@ -23,10 +23,14 @@ const Settings = {
   ecoMode: false,    // true で 30fps に間引き
   showHud: true,     // 右下のシステム表示(世代・時刻・種族チップ)
   cameraZoom: 1.0,    // 1.0 = 基準距離。> 1 で引き(全体俯瞰)、< 1 で寄り(没入)
-  // ブルーム強度(Step 2-2)。既定 0 で opt-in(既存ユーザーの見た目を勝手に変えない)。
-  // 0..1.5(0=完全 OFF / 1.0=設計値 / 1.5=最大)。WebGL2 + HDR FBO + OES_texture_half_float_linear が
-  // 揃っていない環境では描画側で bypass。オービット中は描画側で dragBoost=15 を打ち消す補正が走る
-  bloomStrength: 0,
+  // ブルーム強度(Step 2-2)。既定 0.5 = ON で起動(二段階デプロイ第 2 段階・2026-06-20 確定)。
+  // 0..1.5(0=OFF / 0.5=ON 固定値 / それ以上はクライアント数値互換のため許容)。
+  // UI は ON/OFF のチェックボックス(100% 超でちらちらするため 50% 固定で二値化)。
+  // 既存ユーザーは art-web-settings-v1 の保存値で上書きされるので影響を受けず、
+  // 新規ユーザー / Lively 新規追加 / localStorage クリア後のユーザーに ON で見せる。
+  // WebGL2 + HDR FBO 拡張が揃っていない環境では描画側で bypass、
+  // オービット中は描画側で dragBoost=15 を打ち消す補正が走る
+  bloomStrength: 0.5,
 };
 
 // 実行時エラーの収集(開発用 ?debug の診断表示で見せる)。Lively 内では DevTools が見られないため、

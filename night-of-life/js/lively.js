@@ -80,9 +80,15 @@ function livelyPropertyListener(name, val) {
       if (window.App) App.applyCameraZoom();
       break;
     case 'bloomStrength':
-      // 0..150 (%) を 0..1.5 にマッピング。副作用関数は呼ばない
-      // (render-gl.js の draw() が毎フレーム Settings.bloomStrength を直接読むため)
-      Settings.bloomStrength = Math.max(0, Math.min(1.5, (Number(val) || 0) / 100));
+      // ON/OFF の二値(ON で 50% 相当)。100% 超のちらつき(実機 FB)を受けて上限 50 に固定。
+      // 旧クライアントの数値(0..150)もそのまま受け取れるよう Number 互換を残す
+      // (起動時の 1 回だけ古い値で動き、次の save() で boolean に書き換わる)。
+      // 副作用関数は呼ばない(render-gl.js の draw() が毎フレーム Settings.bloomStrength を直接読む)
+      if (typeof val === 'boolean') {
+        Settings.bloomStrength = val ? 0.5 : 0;
+      } else {
+        Settings.bloomStrength = Math.max(0, Math.min(1.5, (Number(val) || 0) / 100));
+      }
       break;
     case 'bottomMargin':
       // Lively の壁紙はタスクバーの裏まで描画されるため、

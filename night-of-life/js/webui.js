@@ -39,8 +39,6 @@
     evolutionMinutes: '世代交代の間隔(分)',
     brightness: '明るさ(%)',
     trailLength: '軌跡の長さ(%)',
-    bloomStrength: '光のにじみ',
-    bloomUnavailable: 'この環境ではブルームを表示できません',
     ecoMode: '省電力モード',
     showHud: 'システム表示(世代・種族)',
     forceNova: '突然変異を起こす',
@@ -58,8 +56,6 @@
     evolutionMinutes: 'Generation interval (min)',
     brightness: 'Brightness (%)',
     trailLength: 'Trail length (%)',
-    bloomStrength: 'Bloom',
-    bloomUnavailable: 'Bloom is not available in this environment',
     ecoMode: 'Eco mode',
     showHud: 'System display',
     forceNova: 'Trigger mutation',
@@ -103,9 +99,6 @@
     ecoMode:          Settings.ecoMode,
     showHud:          Settings.showHud,
     cameraZoom:       Math.round(Settings.cameraZoom * 100),
-    // ブルーム既定値は OFF(opt-in)。ON で 50% 相当の強度 0.5 を流し込む。
-    // 100% 超でにじみ同士の重なりがちらちらする実機 FB を反映して、上限を 50 に固定し ON/OFF に二値化
-    bloomStrength:    Settings.bloomStrength > 0.001,
   };
 
   // 表示する項目。値の渡し方は LivelyProperties.json と揃える
@@ -113,7 +106,7 @@
   // type=slider は数値、checkbox は真偽、button は押下のみ。
   // Lively 専用(下端の余白)・開発用(診断)・実時間方針で出さない(早回し)は含めない。
   const CONTROLS = [
-    { name: 'particleCount',    label: STR.particleCount,    type: 'slider', min: 4000, max: 7000, step: 100,
+    { name: 'particleCount',    label: STR.particleCount,    type: 'slider', min: 4000, max: 15000, step: 100,
       get: () => Settings.particleCount },
     { name: 'cameraZoom',       label: STR.cameraZoom,       type: 'slider', min: 70,  max: 200,  step: 5,
       get: () => Math.round(Settings.cameraZoom * 100) },
@@ -123,12 +116,6 @@
       get: () => Math.round(Settings.brightness * 100) },
     { name: 'trailLength',      label: STR.trailLength,      type: 'slider', min: 10,  max: 95,   step: 5,
       get: () => Math.round(Settings.trailLength * 100) },
-    // 光のにじみ ON/OFF(Step 2-2)。ON で 50% 相当(数値 0.5)を流し込む。
-    // 100% 超でにじみ同士の重なりがちらちらする実機 FB を受けて、上限 50 に固定し ON/OFF に二値化。
-    // bloomReady=false(WebGL2/HDR 拡張のいずれか欠落)時は描画側で bypass されるので、
-    // UI も disabled + opacity 50% + ツールチップ表示で意図を見せる
-    { name: 'bloomStrength',    label: STR.bloomStrength,    type: 'checkbox',
-      get: () => Settings.bloomStrength > 0.001 },
     { name: 'ecoMode',          label: STR.ecoMode,          type: 'checkbox',
       get: () => Settings.ecoMode },
     { name: 'showHud',          label: STR.showHud,          type: 'checkbox',
@@ -406,16 +393,6 @@
         });
         // resetCamSettings() で表示値を書き戻すために DOM 参照を保持
         c._input = input;
-        // ブルームは WebGL2 + HDR が揃わない環境では使えない。
-        // 描画側で bypass しているが、UI でも操作不能を可視化して「動かしたのに変わらない」混乱を防ぐ
-        if (c.name === 'bloomStrength') {
-          const bloomReady = !!(window.App && typeof App.isBloomReady === 'function' && App.isBloomReady());
-          if (!bloomReady) {
-            input.disabled = true;
-            ctl.style.opacity = '0.5';
-            ctl.title = STR.bloomUnavailable;
-          }
-        }
 
       } else { // button
         const btn = document.createElement('button');

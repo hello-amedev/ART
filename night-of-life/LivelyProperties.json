@@ -4,7 +4,7 @@
     "text": "粒子の量",
     "value": 5500,
     "min": 4000,
-    "max": 7000,
+    "max": 15000,
     "step": 100
   },
   "evolutionMinutes": {
@@ -48,11 +48,6 @@
     "min": 70,
     "max": 200,
     "step": 5
-  },
-  "bloomStrength": {
-    "type": "checkbox",
-    "text": "光のにじみ",
-    "value": true
   },
   "bottomMargin": {
     "type": "slider",

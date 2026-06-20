@@ -23,11 +23,8 @@ const Settings = {
   ecoMode: false,    // true で 30fps に間引き
   showHud: true,     // 右下のシステム表示(世代・時刻・種族チップ)
   cameraZoom: 1.0,    // 1.0 = 基準距離。> 1 で引き(全体俯瞰)、< 1 で寄り(没入)
-  // ブルーム強度(Step 2-2)。既定 0.5 = ON で起動(二段階デプロイ第 2 段階・2026-06-20 確定)。
-  // 0..1.5(0=OFF / 0.5=ON 固定値 / それ以上はクライアント数値互換のため許容)。
-  // UI は ON/OFF のチェックボックス(100% 超でちらちらするため 50% 固定で二値化)。
-  // 既存ユーザーは art-web-settings-v1 の保存値で上書きされるので影響を受けず、
-  // 新規ユーザー / Lively 新規追加 / localStorage クリア後のユーザーに ON で見せる。
+  // ブルーム強度(Step 2-2)。2026-06-20 にオプションを撤去して 0.5 固定の常時 ON に。
+  // 100% 超でちらちらするため 50% で確定、オプションを残す価値が無いというあめさん判断。
   // WebGL2 + HDR FBO 拡張が揃っていない環境では描画側で bypass、
   // オービット中は描画側で dragBoost=15 を打ち消す補正が走る
   bloomStrength: 0.5,
@@ -61,7 +58,10 @@ const Flags = {
 function livelyPropertyListener(name, val) {
   switch (name) {
     case 'particleCount':
-      Settings.particleCount = Math.max(100, val | 0);
+      // 上限 15000(画面サイズが大きいと粒子密度が薄まって「スカスカ」に見えるため、
+      // ユーザーが大画面で密度を稼げるよう上限を拡張)。render-gl.js は MAX=30000 まで
+      // バッファ確保済みなので、シェーダー側は無改修で増やせる
+      Settings.particleCount = Math.min(15000, Math.max(100, val | 0));
       if (window.App) App.applyParticleCount();
       break;
     case 'evolutionMinutes':
@@ -82,17 +82,6 @@ function livelyPropertyListener(name, val) {
     case 'cameraZoom':
       Settings.cameraZoom = Math.max(0.5, Math.min(3.0, (val | 0) / 100));
       if (window.App) App.applyCameraZoom();
-      break;
-    case 'bloomStrength':
-      // ON/OFF の二値(ON で 50% 相当)。100% 超のちらつき(実機 FB)を受けて上限 50 に固定。
-      // 旧クライアントの数値(0..150)もそのまま受け取れるよう Number 互換を残す
-      // (起動時の 1 回だけ古い値で動き、次の save() で boolean に書き換わる)。
-      // 副作用関数は呼ばない(render-gl.js の draw() が毎フレーム Settings.bloomStrength を直接読む)
-      if (typeof val === 'boolean') {
-        Settings.bloomStrength = val ? 0.5 : 0;
-      } else {
-        Settings.bloomStrength = Math.max(0, Math.min(1.5, (Number(val) || 0) / 100));
-      }
       break;
     case 'bottomMargin':
       // Lively の壁紙はタスクバーの裏まで描画されるため、

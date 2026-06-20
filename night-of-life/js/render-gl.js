@@ -787,7 +787,8 @@ void main() {
 
           // 色合成(2D 版と同式。整数化のタイミングも一致させる)
           let hue = hue0 + g.hueOffset + p.hueJ * g.hueSpread;
-          hue += Math.sin(p.phase) * 8;
+          // 色相波 ±15°(2D 版と同式、常時 ON)
+          hue += Math.sin(p.phase) * 15;
           // 奥ほど藍(250)へ霞む大気遠近(最短弧でブレンド)
           let diff = 250 - hue;
           diff = ((diff % 360) + 540) % 360 - 180;

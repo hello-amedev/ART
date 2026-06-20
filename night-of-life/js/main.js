@@ -260,7 +260,9 @@
         const scc = (A.sc + B.sc) * 0.5;
 
         let hue = hue0 + g.hueOffset + p.hueJ * g.hueSpread;
-        hue += Math.sin(p.phase) * 8; // 同期した近傍がほのかに色を揃える(±8°)
+        // 同期した近傍が色を揃える色相波(±15°)。密集度ベースの omega ブーストと組み合わせて
+        // 局所ごとに違うペースで色がうねる。2026-06-20 オプション撤去で常時 ON
+        hue += Math.sin(p.phase) * 15;
         // 奥ほど藍(250)へ霞む大気遠近(最短弧でブレンド。新しい色は足さない)
         let diff = 250 - hue; diff = ((diff % 360) + 540) % 360 - 180;
         hue = ((hue + diff * dn * 0.4) % 360 + 360) % 360;
@@ -502,11 +504,6 @@
     resetCamera() {
       env.cam.az = CAM_DEFAULT_AZ;
       env.cam.el = CAM_DEFAULT_EL;
-    },
-    // ブルーム利用可否(WebGL2 + HDR FBO + OES_texture_half_float_linear + シェーダー link 全成功)。
-    // webui.js の設定パネルが起動時にこれを読んで、不可なら bloomStrength スライダーを disabled にする
-    isBloomReady() {
-      return !!(glRenderer && glRenderer.bloomReady);
     },
     // 動作確認用: いますぐ世代交代を 1 回起こし、大きな突然変異を強制する
     forceNova() {

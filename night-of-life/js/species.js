@@ -242,15 +242,23 @@ class Species {
       p.y += p.vy * speed * p.spdJ * dt;
       p.z += p.vz * speed * p.spdJ * dt;
 
-      // 位相: 固有振動 + 近傍同期(色だけに反映。位置・明るさには使わない)
-      let dphase = this.omega;
+      // 位相: 固有振動 + 近傍同期(色だけに反映。位置・明るさには使わない)。
+      // omega は密集度で 1..1.6 倍にブースト → 密集している局所ほど位相が速く進む →
+      // 場所ごとに違うペースの色相波になり、画面全体で同期しない(2026-06-20 オプション撤去で常時 ON)。
+      // 密集度キャッシュ p._density は parity 半数更新の間も保持(初回 undefined は 0 として扱う)
+      let dphase = this.omega * (1 + (p._density || 0) * 0.6);
       if (K > 0 && (i & 1) === parity) {
         let sumSin = 0, n = 0;
         grid.forNeighbors(p.x, p.y, p.z, Rn, this.id, p, (q) => {
           sumSin += Math.sin(q.phase - p.phase); n++;
           return n >= 8;
         });
-        if (n > 0) dphase += K * (sumSin / n);
+        if (n > 0) {
+          dphase += K * (sumSin / n);
+          p._density = n / 8;  // 0..1 にキャッシュ(次フレーム反対 parity 側でも reuse)
+        } else {
+          p._density = 0;
+        }
       }
       p.phase += dphase * dt;
       if (p.phase > 1e6) p.phase -= 1e6;

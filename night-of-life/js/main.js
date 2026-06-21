@@ -653,19 +653,19 @@
   ];
   for (const [target, type, handler] of camListeners) target.addEventListener(type, handler);
 
-  // Lively 環境ではマウス操作は壁紙に届かない設計のはずだが、実機 FB で何らかのイベントが
-  // pointerdown を発火し dragBoost/paintFull が一瞬走って軌跡が消える問題が確認された。
-  // livelyPropertyListener が呼ばれたら「Lively 環境」と判定し、カメラ操作 listener を全部解除する
-  // (webui.js が Web 設定 UI を撤去する仕組みと同じパターン。ロード順は lively → main → webui
-  //  なので、Lively からの呼び出しは webui のラッパー → ここのラッパー → 本物 の順で連鎖する)
-  const realLivelyListener = window.livelyPropertyListener;
-  window.livelyPropertyListener = function (name, val) {
+  // Lively 環境では「クリックを微妙に拾って軌跡が一瞬消える」問題への対策として、
+  // カメラ操作 listener をまとめて解除する関数を window に公開する。発火は webui.js の
+  // 既存 Lively 検出フック(livelyPropertyListener ラッパー)からの呼び出しに委ねる
+  // (webui.js が同じトリガーで Web 設定 UI も撤去するので、Lively 検出ロジックを 1 箇所に
+  //  まとめて再利用する形)。main.js 自身では livelyPropertyListener をラップしない —
+  // webui.js が realListener として保持するのが main のラッパーになると、Web UI からの
+  // 設定変更でもラッパーが走ってローカル環境でも teardown されてしまうため
+  window.__nolCameraTeardown = function () {
     if (camListeners.length > 0) {
       clearCamDrag();
       for (const [target, type, handler] of camListeners) target.removeEventListener(type, handler);
       camListeners.length = 0;
     }
-    if (typeof realLivelyListener === 'function') return realLivelyListener(name, val);
   };
 
   window.addEventListener('resize', resize);

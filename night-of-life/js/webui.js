@@ -74,11 +74,18 @@
   let pointerInPanel = false;
 
   // ホスト(Lively)からの設定通知を捕捉。一度でも来たら壁紙とみなして Web UI を撤去。
-  // 本来の処理(realListener)はそのまま通す
+  // 本来の処理(realListener)はそのまま通す。
+  // main.js のカメラ操作 listener も同タイミングで解除する(Lively 環境ではクリック誤検知で
+  // 軌跡が一瞬消える問題への対策・5 章既知)。Lively 検出ロジックを webui.js に集約し、
+  // main.js は teardown 関数を window に公開するだけにすることで、Web UI からの設定変更で
+  // ローカル環境までカメラが死ぬループを避ける
   window.livelyPropertyListener = function (name, val) {
     if (!isWallpaperHost) {
       isWallpaperHost = true;
       teardown();
+      if (typeof window.__nolCameraTeardown === 'function') {
+        window.__nolCameraTeardown();
+      }
     }
     return realListener.apply(this, arguments);
   };

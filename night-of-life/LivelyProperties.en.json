@@ -1,0 +1,70 @@
+{
+  "particleCount": {
+    "type": "slider",
+    "text": "Particles",
+    "value": 5500,
+    "min": 4000,
+    "max": 15000,
+    "step": 100
+  },
+  "evolutionMinutes": {
+    "type": "slider",
+    "text": "Generation interval (min)",
+    "value": 3,
+    "min": 1,
+    "max": 15,
+    "step": 1
+  },
+  "brightness": {
+    "type": "slider",
+    "text": "Brightness (%)",
+    "value": 100,
+    "min": 40,
+    "max": 160,
+    "step": 5
+  },
+  "trailLength": {
+    "type": "slider",
+    "text": "Trail length (%)",
+    "value": 50,
+    "min": 10,
+    "max": 95,
+    "step": 5
+  },
+  "ecoMode": {
+    "type": "checkbox",
+    "text": "Eco mode",
+    "value": false
+  },
+  "showHud": {
+    "type": "checkbox",
+    "text": "System display",
+    "value": true
+  },
+  "cameraZoom": {
+    "type": "slider",
+    "text": "Camera distance",
+    "value": 100,
+    "min": 70,
+    "max": 200,
+    "step": 5
+  },
+  "bottomMargin": {
+    "type": "slider",
+    "text": "Bottom margin",
+    "value": 60,
+    "min": 0,
+    "max": 240,
+    "step": 4
+  },
+  "forceNova": {
+    "type": "button",
+    "text": "Trigger mutation",
+    "value": "force"
+  },
+  "resetEvolution": {
+    "type": "button",
+    "text": "Reset evolution",
+    "value": "reset"
+  }
+}

@@ -481,6 +481,9 @@
   // ドラッグ中は paintFull で残像が消える → 粒子 1 フレームぶんの輝度では暗くなるので、
   // 「軌跡のない輝く粒子」になるよう env.dragBoost で粒子 α を底上げする(両 renderer 共通)
   const CAM_DRAG_BOOST = 15;
+  // 5 px 未満の pointer 動きはドラッグ確定にしない。Lively 環境で意図しないクリックを
+  // 拾った時に dragBoost/paintFull が一瞬走って軌跡が消える問題への対策(5 章既知)
+  const CAM_DRAG_DEAD_ZONE = 5;        // px (clientX/Y で測る)
   // 計器・診断・歯車アイコン・設定パネルの上で始まったクリックではオービットを起こさない
   // (HUD と #debug は pointer-events:none で canvas に素通りしてくるので明示除外が要る)
   const CAM_DRAG_BLOCKERS = ['hud', 'debug', 'nol-webui-icon', 'nol-webui'];
@@ -535,7 +538,8 @@
   };
 
   // ドラッグハンドラ本体 (上の CAM_DEFAULT_AZ などを参照)
-  let camDrag = null;                  // { pointerId, lastX, lastY } when dragging
+  let camDrag = null;                  // { pointerId, lastX, lastY } - ドラッグ確定後の追跡用
+  let camDragPending = null;           // { pointerId, startX, startY } - デッドゾーン待ちの候補
   // ドラッグ中フラグは frame() から見て paintFull を毎フレーム掛けるかの判定に使う
   // (カーソルは既定のまま変えない — あめさん要望)
   // 単指ドラッグはオービットに使う(スクロール暴発防止)が、二本指のピンチズームは残す
@@ -557,20 +561,46 @@
       try { canvas.releasePointerCapture(camDrag.pointerId); } catch (_) {}
     }
     camDrag = null;
+    camDragPending = null;
     env.dragBoost = 1;
   }
 
-  canvas.addEventListener('pointerdown', (e) => {
+  // pointermove で CAM_DRAG_DEAD_ZONE を越えた時点で呼ばれる:
+  // ここで初めて dragBoost と setPointerCapture を起こす(pointerdown では起こさない)
+  function confirmCamDrag(pointerId, x, y) {
+    camDrag = { pointerId, lastX: x, lastY: y };
+    env.dragBoost = CAM_DRAG_BOOST;
+    try { canvas.setPointerCapture(pointerId); } catch (_) {}
+    camDragPending = null;
+  }
+
+  function onPointerDown(e) {
     // マウスは主ボタンのみ。タッチ/ペンは button が 0 でないことがある(ペン側ボタン等)ので素通り
     if (e.pointerType === 'mouse' && e.button !== 0) return;
-    if (camDrag) return;
+    if (camDrag || camDragPending) return;
     for (const id of CAM_DRAG_BLOCKERS) if (pointInVisibleEl(e, id)) return;
-    camDrag = { pointerId: e.pointerId, lastX: e.clientX, lastY: e.clientY };
-    env.dragBoost = CAM_DRAG_BOOST;
-    try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
-  });
+    // pointerdown だけでは起動しない: pointermove で CAM_DRAG_DEAD_ZONE px 以上動いたら確定。
+    // Lively 環境で意図しないクリックイベントを拾った時に dragBoost/paintFull が一瞬走って
+    // 軌跡が消える問題への対策(5 章既知)
+    camDragPending = { pointerId: e.pointerId, startX: e.clientX, startY: e.clientY };
+  }
 
-  canvas.addEventListener('pointermove', (e) => {
+  function onPointerMove(e) {
+    // デッドゾーンを越えていない候補状態 → 距離判定して確定するかどうか
+    if (camDragPending && e.pointerId === camDragPending.pointerId) {
+      if (e.pointerType === 'mouse' && (e.buttons & 1) === 0) {
+        // マウスで主ボタンが離れた → 候補キャンセル(クリック扱いで終わる)
+        camDragPending = null;
+        return;
+      }
+      const dx = e.clientX - camDragPending.startX;
+      const dy = e.clientY - camDragPending.startY;
+      if (dx * dx + dy * dy < CAM_DRAG_DEAD_ZONE * CAM_DRAG_DEAD_ZONE) return;
+      // デッドゾーンを越えた → ドラッグ確定。確定時点の座標を基準にする
+      // (起点 startX/startY からの累積で動かすと最初の 1 フレームで dead-zone ぶんジャンプする)
+      confirmCamDrag(e.pointerId, e.clientX, e.clientY);
+      return;
+    }
     if (!camDrag || e.pointerId !== camDrag.pointerId) return;
     // setPointerCapture が効かない環境で pointerup を取りこぼした時のセーフティ:
     // マウスで主ボタンが離れているのに pointermove が来たらドラッグ終了として扱う
@@ -584,28 +614,59 @@
     if (el < CAM_EL_MIN) el = CAM_EL_MIN;
     else if (el > CAM_EL_MAX) el = CAM_EL_MAX;
     env.cam.el = el;
-  });
+  }
 
   function endCamDrag(e) {
+    // 候補状態のままならクリック扱いで終わる(視覚的影響なし)
+    if (camDragPending) {
+      if (!e || e.pointerId === undefined || e.pointerId === camDragPending.pointerId) {
+        camDragPending = null;
+      }
+    }
     if (!camDrag) return;
     if (e && e.pointerId !== undefined && e.pointerId !== camDrag.pointerId) return;
     clearCamDrag();
   }
-  // ふつうは canvas で pointerup/cancel が取れるが、setPointerCapture が効かないホストや
-  // 別要素・ウィンドウ外でリリースされた時のためにウィンドウ側にも保険を張る
-  canvas.addEventListener('pointerup', endCamDrag);
-  canvas.addEventListener('pointercancel', endCamDrag);
-  canvas.addEventListener('lostpointercapture', endCamDrag);
-  window.addEventListener('pointerup', endCamDrag);
-  window.addEventListener('pointercancel', endCamDrag);
-  // タブ切替/Alt-Tab で離した手の pointerup を見失う場合の保険
-  window.addEventListener('blur', () => clearCamDrag());
-  document.addEventListener('visibilitychange', () => { if (document.hidden) clearCamDrag(); });
 
-  canvas.addEventListener('dblclick', () => {
+  function onBlur() { clearCamDrag(); }
+  function onVisibilityChange() { if (document.hidden) clearCamDrag(); }
+  function onDblClick() {
     env.cam.az = CAM_DEFAULT_AZ;
     env.cam.el = CAM_DEFAULT_EL;
-  });
+  }
+
+  // listeners は後で removeEventListener できるよう配列で保持する(Lively 環境での teardown 用)
+  // ふつうは canvas で pointerup/cancel が取れるが、setPointerCapture が効かないホストや
+  // 別要素・ウィンドウ外でリリースされた時のためにウィンドウ側にも保険を張る
+  const camListeners = [
+    [canvas,   'pointerdown',        onPointerDown],
+    [canvas,   'pointermove',        onPointerMove],
+    [canvas,   'pointerup',          endCamDrag],
+    [canvas,   'pointercancel',      endCamDrag],
+    [canvas,   'lostpointercapture', endCamDrag],
+    [window,   'pointerup',          endCamDrag],
+    [window,   'pointercancel',      endCamDrag],
+    // タブ切替/Alt-Tab で離した手の pointerup を見失う場合の保険
+    [window,   'blur',               onBlur],
+    [document, 'visibilitychange',   onVisibilityChange],
+    [canvas,   'dblclick',           onDblClick],
+  ];
+  for (const [target, type, handler] of camListeners) target.addEventListener(type, handler);
+
+  // Lively 環境ではマウス操作は壁紙に届かない設計のはずだが、実機 FB で何らかのイベントが
+  // pointerdown を発火し dragBoost/paintFull が一瞬走って軌跡が消える問題が確認された。
+  // livelyPropertyListener が呼ばれたら「Lively 環境」と判定し、カメラ操作 listener を全部解除する
+  // (webui.js が Web 設定 UI を撤去する仕組みと同じパターン。ロード順は lively → main → webui
+  //  なので、Lively からの呼び出しは webui のラッパー → ここのラッパー → 本物 の順で連鎖する)
+  const realLivelyListener = window.livelyPropertyListener;
+  window.livelyPropertyListener = function (name, val) {
+    if (camListeners.length > 0) {
+      clearCamDrag();
+      for (const [target, type, handler] of camListeners) target.removeEventListener(type, handler);
+      camListeners.length = 0;
+    }
+    if (typeof realLivelyListener === 'function') return realLivelyListener(name, val);
+  };
 
   window.addEventListener('resize', resize);
 

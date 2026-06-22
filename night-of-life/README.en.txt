@@ -1,5 +1,5 @@
 ================================
-A Night of Life — 生命の夜
+A Night of Life
 ================================
 
 Light art that keeps changing under a genetic algorithm

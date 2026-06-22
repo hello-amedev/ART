@@ -47,12 +47,41 @@ window.addEventListener('unhandledrejection', (e) => {
 //   ?debug      … 左下に世代・種族の状態を表示
 //   ?bloom=0    … ブルームを強制 OFF(キルスイッチ。bloomReady=false に倒す)
 //   ?bloomDebug=1 … fboBloomB を全画面に貼って中身を可視化(UI には出さない)
+//   ?ffmin=2.5  … 遠景の針の最低長(物理px)。既定 2.5、0〜3.0 にクランプ。点々対策(案A)の床
+//   ?ffsoft=1.0 … 針の先端の内向きにじみ幅(CSS px)。既定 1.0、0〜3.0 にクランプ。点々対策(案A)
+//   ?ssaa=1.3   … スーパーサンプリング倍率(内部を倍率^2 で描いて画面へ縮小)。既定 1.3、1.0〜2.0。
+//                 1.0 で無効=現状と一致。かき傷/色ノイズを縮小時の平均でならす(WebGL2 経路のみ)
+//   ?dcsat=0.5  … 最奥の彩度を沈める量(0〜1)。既定 0.5。色ノイズ抑制(density-contrast)の主役
+//   ?dca=0.2    … 最奥の明度を沈める量(0〜1)。既定 0.2。density-contrast の補助(控えめ)
 const Flags = {
   demo: /[?&]demo/.test(location.search),
   debug: /[?&]debug/.test(location.search),
   event: /[?&]event/.test(location.search),     // 渦イベントを常時オン(通り抜けの確認用)
   killBloom: /[?&]bloom=0/.test(location.search),
   bloomDebug: /[?&]bloomDebug=1/.test(location.search),
+  // 遠景の点々対策(案A)の開発用ツマミ。UI には出さず、URL でだけ生調整できる。
+  // 値が無ければ安全側の固定値(物理 2.5px 床 / 先端にじみ 1.0px)
+  farMinLenPhys: (() => {
+    const m = /[?&]ffmin=([0-9.]+)/.exec(location.search);
+    return m ? Math.min(3.0, Math.max(0, parseFloat(m[1]) || 0)) : 2.5;
+  })(),
+  farEndFadeCss: (() => {
+    const m = /[?&]ffsoft=([0-9.]+)/.exec(location.search);
+    return m ? Math.min(3.0, Math.max(0, parseFloat(m[1]) || 0)) : 1.0;
+  })(),
+  // 遠景のざわつき対策・第2弾の開発用ツマミ(既定はこの値で出荷=Lively 壁紙もこの値で動く)
+  ssaa: (() => {
+    const m = /[?&]ssaa=([0-9.]+)/.exec(location.search);
+    return m ? Math.min(2.0, Math.max(1.0, parseFloat(m[1]) || 1.0)) : 1.3;
+  })(),
+  dcSat: (() => {
+    const m = /[?&]dcsat=([0-9.]+)/.exec(location.search);
+    return m ? Math.min(1.0, Math.max(0, parseFloat(m[1]) || 0)) : 0.5;
+  })(),
+  dcAlpha: (() => {
+    const m = /[?&]dca=([0-9.]+)/.exec(location.search);
+    return m ? Math.min(1.0, Math.max(0, parseFloat(m[1]) || 0)) : 0.2;
+  })(),
 };
 
 function livelyPropertyListener(name, val) {

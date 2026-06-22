@@ -32,6 +32,16 @@
   // (UI 側もこのフラグを見て disabled になる)。?bloomDebug=1 で fboBloomB をフル画面表示
   if (glRenderer && Flags.killBloom) glRenderer.bloomReady = false;
   if (glRenderer && Flags.bloomDebug) glRenderer.bloomDebug = true;
+  // 遠景の点々対策(案A)の調整値を WebGL2 経路へ反映(?ffmin / ?ffsoft、無ければ既定値)。
+  // SSAA(?ssaa)と density-contrast(?dcsat / ?dca)も同様に反映。renderScale は FBO 生成
+  // (resize)時に読むので、必ず初回 resize() より前のこの位置で設定する
+  if (glRenderer) {
+    glRenderer.farMinLenPhys = Flags.farMinLenPhys;
+    glRenderer.farEndFadeCss = Flags.farEndFadeCss;
+    glRenderer.renderScale = Flags.ssaa;
+    glRenderer.dcSat = Flags.dcSat;
+    glRenderer.dcAlpha = Flags.dcAlpha;
+  }
   const debugEl = document.getElementById('debug');
   const hudEl = document.getElementById('hud');
   const hudMetaEl = hudEl.querySelector('.meta');
@@ -213,6 +223,13 @@
     const SX = env.vw / 2, SY = env.vh / 2, FOC = env.focal, CD = env.camDist;
     const far = CD + env.worldR, span = (far - 1) || 1;
     const refSc = FOC / CD;
+    // 遠景の点々対策(案A・2D 鏡像): 投影された針が短すぎる時、向きはそのまま中心対称に
+    // 最低長まで伸ばす(GL 経路の床と同式)。物理 px 床を dpr で割って CSS px に換算。
+    // 先端処理・lineCap(butt)は触らない(丸い先端=頭=生物感)。2D はブラウザが線を AA する
+    const dpr2d = env.vw > 0 ? canvas.width / env.vw : 1;
+    const minLen2d = Flags.farMinLenPhys / Math.max(0.01, dpr2d);
+    // density-contrast(色ノイズ抑制・GL 経路と同式の鏡像): 最奥の彩度/明度を非線形に沈める
+    const dcSat = Flags.dcSat, dcAlpha = Flags.dcAlpha;
     const O = env._O || (env._O = {});
     const A = env._A || (env._A = {});
     const B = env._B || (env._B = {});
@@ -266,7 +283,10 @@
         // 奥ほど藍(250)へ霞む大気遠近(最短弧でブレンド。新しい色は足さない)
         let diff = 250 - hue; diff = ((diff % 360) + 540) % 360 - 180;
         hue = ((hue + diff * dn * 0.4) % 360 + 360) % 360;
-        const sat = (sat0 * (1 - dn * 0.35)) | 0;
+        // density-contrast: 最奥だけ非線形に沈める係数(dn<0.55 で 0 = 近〜中景は不変)
+        let dcFar = (dn - 0.55) / 0.45;
+        if (dcFar < 0) dcFar = 0; else if (dcFar > 1) dcFar = 1; else dcFar = dcFar * dcFar * (3 - 2 * dcFar);
+        const sat = (sat0 * (1 - dn * 0.35) * (1 - dcFar * dcSat)) | 0;
         let lum = lum0 * (1 - dn * 0.42); if (lum < 24) lum = 24;
         // per-particle 包絡: 退場中はウィンクアウト(粒子の exitOffset 順に消える)、誕生中は種族 opacity 一律
         let pEnv;
@@ -278,14 +298,25 @@
         } else {
           pEnv = 1;
         }
-        const alpha = baseRaw * pEnv * (1 - dn * 0.6);
+        const alpha = baseRaw * pEnv * (1 - dn * 0.6) * (1 - dcFar * dcAlpha);
 
         ctx.strokeStyle = `hsla(${hue | 0},${sat}%,${lum | 0}%,${alpha.toFixed(3)})`;
         // 1px 未満はピクセル境界で AA が効かずジャギーが出るため最小 1.0px に保つ
         ctx.lineWidth = Math.max(1.0, lineBase * p.sizeJ * (scc / refSc));
+        // 最低長の床(案A): 投影が短すぎる遠景の針を中心対称に伸ばす(向きは保持)
+        let ax = A.sx, ay = A.sy, bx = B.sx, by = B.sy;
+        const dx = bx - ax, dy = by - ay;
+        const seg = Math.hypot(dx, dy);
+        if (seg < minLen2d) {
+          const mx = (ax + bx) * 0.5, my = (ay + by) * 0.5;
+          const ux = seg > 1e-4 ? dx / seg : 1, uy = seg > 1e-4 ? dy / seg : 0;
+          const h = minLen2d * 0.5;
+          ax = mx - ux * h; ay = my - uy * h;
+          bx = mx + ux * h; by = my + uy * h;
+        }
         ctx.beginPath();
-        ctx.moveTo(A.sx, A.sy);
-        ctx.lineTo(B.sx, B.sy);
+        ctx.moveTo(ax, ay);
+        ctx.lineTo(bx, by);
         ctx.stroke();
       }
     }

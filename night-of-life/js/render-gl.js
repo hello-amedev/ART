@@ -87,10 +87,13 @@ uniform float u_saz;
 uniform float u_cel;
 uniform float u_sel;
 uniform float u_refSc;
+uniform float u_minHalfLen;  // 投影された針の半長の床(CSS px)。遠景の点潰れ対策(案A)
 
 out vec4 v_color;
 out float v_perpNorm;   // -1 .. +1(クワッド内で perp 方向の正規化位置。エッジ AA に使う)
 out float v_halfW;      // 線幅の半分(px)。インスタンス間で一定だがインスタンス内では varying として渡す
+out float v_alongNorm;  // -1 .. +1(クワッド内で長さ方向の正規化位置。先端 AA に使う)
+out float v_halfLen;    // 針の半長(px・床適用後)。先端 AA の距離換算に使う
 
 // ワールド点 → (sx, sy, sc, vz)。main.js の pr() と同式
 vec4 project(vec3 p) {
@@ -116,26 +119,34 @@ void main() {
     v_color = vec4(0.0);
     v_perpNorm = 0.0;
     v_halfW = 0.0;
+    v_alongNorm = 0.0;
+    v_halfLen = 0.0;
     return;
   }
 
   // 画面上の線方向と垂直方向(両端で同一の perp を使うことで twist を防ぐ)
+  vec2 center = 0.5 * (A.xy + B.xy);
   vec2 along = B.xy - A.xy;
   float alen = length(along);
   vec2 dir = (alen > 1e-4) ? (along / alen) : vec2(1.0, 0.0);
   vec2 perp = vec2(-dir.y, dir.x);
-
-  // 4 頂点を A-/A+/B-/B+ に割り当て(TRIANGLE_STRIP)
-  bool isA = (a_corner < 1.5);
-  vec2 endpt = isA ? A.xy : B.xy;
-  float sgn = (a_corner == 0.0 || a_corner == 2.0) ? -1.0 : 1.0;
 
   // 線幅は 2D 版の max(1.0, lineBase * scc/refSc) と同式(1px 未満はピクセル境界で
   // AA が効かずジャギーが出るため、表現の細さより輪郭の滑らかさを優先)
   float scc = 0.5 * (A.z + B.z);
   float halfW = 0.5 * max(1.0, a_lineBase * (scc / u_refSc));
 
-  vec2 posPx = endpt + perp * sgn * halfW;
+  // 最低の長さの床(案A): 投影された半長が短すぎる遠景の針を、向きはそのまま
+  // 中心対称に最低長まで伸ばす。床が効かない時は 0.5*alen = 端点そのものなので近景は不変。
+  // u_minHalfLen は JS 側で「物理 px 床 / dpr / 2」を渡す(高 DPR 機では自動で効きが弱まる)
+  float halfLen = max(0.5 * alen, u_minHalfLen);
+
+  // 4 頂点を A-/A+/B-/B+ に割り当て(TRIANGLE_STRIP)
+  bool isA = (a_corner < 1.5);
+  float alongSgn = isA ? -1.0 : 1.0;
+  float perpSgn = (a_corner == 0.0 || a_corner == 2.0) ? -1.0 : 1.0;
+
+  vec2 posPx = center + dir * (alongSgn * halfLen) + perp * (perpSgn * halfW);
 
   // ピクセル → クリップ空間(Y は反転)
   vec2 clip = vec2(
@@ -144,8 +155,10 @@ void main() {
   );
   gl_Position = vec4(clip, 0.0, 1.0);
   v_color = a_color;
-  v_perpNorm = sgn;     // -1 (corner 0,2) / +1 (corner 1,3) → クワッド内で -1..+1 に補間
+  v_perpNorm = perpSgn;     // -1 (corner 0,2) / +1 (corner 1,3) → クワッド内で -1..+1 に補間
   v_halfW = halfW;
+  v_alongNorm = alongSgn;   // -1 (A 端) / +1 (B 端) → クワッド内で -1..+1 に補間
+  v_halfLen = halfLen;
 }`;
 
   const PARTICLE_FRAG_SRC = `#version 300 es
@@ -153,13 +166,22 @@ precision mediump float;
 in vec4 v_color;
 in float v_perpNorm;
 in float v_halfW;
+in float v_alongNorm;
+in float v_halfLen;
+uniform float u_endFade;   // 針の先端の内向きにじみ幅(CSS px)。遠景の点潰れ対策(案A)
 out vec4 outColor;
 
 void main() {
-  // 距離ベース AA: 線の中心からの距離(px)が v_halfW を超える手前 1px で滑らかにフェード。
+  // 距離ベース AA(幅): 線の中心からの距離(px)が v_halfW を超える手前 1px で滑らかにフェード。
   // HDR FBO 描画では MSAA が効かないので、自前で輪郭をぼかしてジャギーを抑える
-  float dist = abs(v_perpNorm) * v_halfW;
-  float aa = 1.0 - smoothstep(max(0.0, v_halfW - 1.0), v_halfW, dist);
+  float distW = abs(v_perpNorm) * v_halfW;
+  float aaW = 1.0 - smoothstep(max(0.0, v_halfW - 1.0), v_halfW, distW);
+  // 距離ベース AA(先端): 針の先端 u_endFade px を内側へ向けて溶かす(案A)。
+  // 長い近景の針では半長に対し相対的に無視できるが、点に潰れた遠景の針では
+  // 硬い先端が柔らかな光点になる(自然に遠景だけに効く)
+  float distL = abs(v_alongNorm) * v_halfLen;
+  float aaL = 1.0 - smoothstep(max(0.0, v_halfLen - u_endFade), v_halfLen, distL);
+  float aa = aaW * aaL;
   // 加算合成 (blendFunc(ONE, ONE)) で 2D 版の hsla * 'lighter' と同等の効果を出すため、
   // RGB を α で前乗算して吐く(dst.rgb += rgb * alpha * aa が成立する)
   float a = v_color.a * aa;
@@ -352,6 +374,21 @@ void main() {
       this.fboBloomH = 0;
       // ?bloomDebug=1 で半解像度 fboBloomB をフル画面表示する隠しフラグ
       this.bloomDebug = false;
+
+      // 遠景の点々対策(案A)。main.js が Flags(?ffmin / ?ffsoft)から上書きする。
+      // farMinLenPhys: 投影された針の最低長(物理px)。dpr で割って CSS px 床に換算するので
+      //   高 DPR 機では自動で効きが弱まる。farEndFadeCss: 針の先端の内向きにじみ幅(CSS px)
+      this.farMinLenPhys = 2.5;
+      this.farEndFadeCss = 1.0;
+
+      // 遠景のざわつき対策・第2弾(main.js が Flags から上書き)。
+      // renderScale: SSAA 倍率。内部 FBO を renderScale 倍の解像度で描き、blit で画面サイズへ
+      //   LINEAR 縮小する。縮小時の平均でかき傷(高空間周波数ノイズ)と色ノイズが溶ける。
+      //   1.0 で完全無効(現状と数学的に一致)。塗りコストは倍率の 2 乗。
+      // dcSat/dcAlpha: density-contrast。最奥(far)の彩度/明度を非線形に沈めて色ノイズを抑える。
+      this.renderScale = 1.0;
+      this.dcSat = 0.0;
+      this.dcAlpha = 0.0;
     }
 
     init() {
@@ -367,6 +404,8 @@ void main() {
       this.uCel     = gl.getUniformLocation(this.programParticle, 'u_cel');
       this.uSel     = gl.getUniformLocation(this.programParticle, 'u_sel');
       this.uRefSc   = gl.getUniformLocation(this.programParticle, 'u_refSc');
+      this.uMinHalfLen = gl.getUniformLocation(this.programParticle, 'u_minHalfLen');
+      this.uEndFade    = gl.getUniformLocation(this.programParticle, 'u_endFade');
 
       // 背景フェードプログラム
       this.programBg = linkProgram(gl, BG_VERT_SRC, BG_FRAG_SRC);
@@ -478,10 +517,16 @@ void main() {
     }
 
     resize(physW, physH) {
-      this.gl.viewport(0, 0, physW, physH);
-      if (this.useHDR) this._createFBO(physW, physH);
+      // SSAA: HDR 経路では内部レンダ解像度を renderScale 倍にして描き、blit で画面サイズ
+      // (physW×physH = canvas.width/height)へ LINEAR 縮小する。8-bit 直描画では FBO が無いので等倍。
+      // canvas.width 自体は main.js 側のまま(=画面の物理px)。dprEff(案A の床)も canvas.width 基準なので不変。
+      const eff = this.useHDR ? this.renderScale : 1.0;
+      const rw = Math.max(1, Math.round(physW * eff));
+      const rh = Math.max(1, Math.round(physH * eff));
+      this.gl.viewport(0, 0, rw, rh);
+      if (this.useHDR) this._createFBO(rw, rh);
       // ブルーム用の半解像度 FBO もリサイズ時に再作成(前回サイズ一致なら内部でスキップ)
-      if (this.bloomReady) this._createBloomFBOs(physW, physH);
+      if (this.bloomReady) this._createBloomFBOs(rw, rh);
     }
 
     // FBO テクスチャ + framebuffer を作り直す(canvas サイズが変わるたびに必要)
@@ -494,8 +539,10 @@ void main() {
       gl.bindTexture(gl.TEXTURE_2D, this.fboTex);
       // 内部 RGBA16F(半精度浮動小数)で確保。NEAREST フィルタ = 1:1 blit なので拡大縮小なし
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, physW, physH, 0, gl.RGBA, gl.HALF_FLOAT, null);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      // LINEAR フィルタ: SSAA(renderScale>1)時の blit 縮小でバイリニア平均が掛かり、かき傷・
+      // 色ノイズが溶ける。renderScale=1 のときは 1:1 blit なので NEAREST と実質同じ(無害)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
@@ -585,8 +632,10 @@ void main() {
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, this.fboTex);
       gl.uniform1i(this.uBrightSrc, 0);
-      // u_texelStep は読み取り元(HDR FBO=フル解像度)の 1 texel に基づく
-      gl.uniform2f(this.uBrightTexelStep, 1.0 / this.fboW, 0.0);
+      // u_texelStep は読み取り元(HDR FBO=フル解像度)の 1 texel に基づく。
+      // SSAA(renderScale>1)時は内部 FBO が renderScale 倍に細かいので、texelStep を ×renderScale して
+      // ブルームの「画面上の」半径を倍率不変に保つ(これをしないと s を上げるほどブルームが細る)
+      gl.uniform2f(this.uBrightTexelStep, this.renderScale / this.fboW, 0.0);
       gl.uniform1f(this.uBrightThreshold, 1.0);    // HDR の物理的飽和ライン
       gl.uniform1f(this.uBrightSoftKnee, 0.3);     // 閾値直下のなめらか減衰幅
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
@@ -597,8 +646,9 @@ void main() {
       gl.useProgram(this.programBlurV);
       gl.bindTexture(gl.TEXTURE_2D, this.fboBloomATex);
       gl.uniform1i(this.uBlurVSrc, 0);
-      // 縦パスの texelStep は半解像度の高さ(読み取り元 = fboBloomA = 半解像度)
-      gl.uniform2f(this.uBlurVTexelStep, 0.0, 1.0 / bh);
+      // 縦パスの texelStep は半解像度の高さ(読み取り元 = fboBloomA = 半解像度)。
+      // SSAA 時は横パスと同じく ×renderScale で画面上の半径を倍率不変に保つ
+      gl.uniform2f(this.uBlurVTexelStep, 0.0, this.renderScale / bh);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
       gl.bindVertexArray(null);
@@ -662,6 +712,12 @@ void main() {
         gl.uniform1f(this.uCel, Math.cos(cam.el));
         gl.uniform1f(this.uSel, Math.sin(cam.el));
         gl.uniform1f(this.uRefSc, env.focal / env.camDist);
+
+        // 遠景の点々対策(案A): 最低長の床 + 先端にじみ。シェーダーは CSS px 空間で動くので
+        // 物理 px 床を dpr で割って CSS px の半長床に換算する(高 DPR 機では効きが弱まる)。
+        const dprEff = env.vw > 0 ? (this.canvas.width / env.vw) : 1;
+        gl.uniform1f(this.uMinHalfLen, (this.farMinLenPhys / Math.max(0.01, dprEff)) * 0.5);
+        gl.uniform1f(this.uEndFade, this.farEndFadeCss);
 
         // インスタンスデータを上書き(orphan + サブアレイで送る)
         gl.bindBuffer(gl.ARRAY_BUFFER, this.vboInstance);
@@ -748,6 +804,9 @@ void main() {
       const bright = Settings.brightness;
       // オービット中は paintFull で残像を消すぶん、現フレームの粒子 α を底上げする(両 renderer 共通)
       const dragBoost = env.dragBoost || 1;
+      // density-contrast(色ノイズ抑制): 最奥(dn>DC_K)の彩度/明度を非線形に沈めて、
+      // 種族色 + 色相波の細線が混ざる色ズレを抑える。dcSat 主役 / dcAlpha 控えめ
+      const dcSat = this.dcSat, dcAlpha = this.dcAlpha;
 
       // 中心点投影で dn を出す。2D 版は (A.vz + B.vz) / 2 だが、vz は (x,y,z) の
       // アフィン線形関数(回転 → 平行移動)なので f((A+B)/2) = (f(A)+f(B))/2 が
@@ -793,7 +852,10 @@ void main() {
           let diff = 250 - hue;
           diff = ((diff % 360) + 540) % 360 - 180;
           hue = ((hue + diff * dn * 0.4) % 360 + 360) % 360;
-          const sat = (sat0 * (1 - dn * 0.35)) | 0;
+          // density-contrast: 最奥だけ非線形に沈める係数(dn<0.55 で 0 = 近〜中景は不変)
+          let far = (dn - 0.55) / 0.45;
+          if (far < 0) far = 0; else if (far > 1) far = 1; else far = far * far * (3 - 2 * far);
+          const sat = (sat0 * (1 - dn * 0.35) * (1 - far * dcSat)) | 0;
           let lum = lum0 * (1 - dn * 0.42);
           if (lum < 24) lum = 24;
           lum = lum | 0;
@@ -807,7 +869,7 @@ void main() {
           } else {
             pEnv = 1;
           }
-          const alpha = baseRaw * pEnv * (1 - dn * 0.6);
+          const alpha = baseRaw * pEnv * (1 - dn * 0.6) * (1 - far * dcAlpha);
 
           // 2D 版は hsla(...) 文字列をブラウザに渡して RGB 化させる。
           // ここでは同一の hslToRgb で先に RGB を出してインスタンスに渡す
